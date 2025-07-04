@@ -1,1 +1,0 @@
-# qubership-terraform-hub
