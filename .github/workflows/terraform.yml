@@ -33,6 +33,7 @@ jobs:
 
       - name: Listing downloaded files
         run: |
+          pwd
           ls -R pgskipper-operator
 
       - name: Setup Terraform
@@ -71,5 +72,6 @@ jobs:
 
       - name: Terraform Init and Plan
         run: |
+          pwd
           terraform init
           terraform plan
