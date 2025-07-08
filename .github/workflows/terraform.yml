@@ -41,13 +41,13 @@ jobs:
         with:
           terraform_version: 1.12.2
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.32.0'
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v3
+#      - name: Setup kubectl
+#        uses: azure/setup-kubectl@v3
+#        with:
+#          version: 'v1.32.0'
+#
+#      - name: Setup Helm
+#        uses: azure/setup-helm@v3
 
       - name: Verify tools
         run: |
