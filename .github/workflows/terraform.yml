@@ -25,6 +25,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Clone public pgskipper-operator repo
+        uses: actions/checkout@v4
+        with:
+            repository: Netcracker/pgskipper-operator
+            path: pgskipper-operator
+
+      - name: Listing downloaded files
+        run: |
+          ls -R pgskipper-operator
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
