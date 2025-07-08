@@ -1,0 +1,31 @@
+name: Terraform CI
+
+on:
+  workflow_dispatch: # Запуск вручную через UI
+    inputs:
+      environment:
+        description: "Environment (dev/prod)"
+        required: true
+        default: "dev"
+      tf_command:
+        description: "Terraform command"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0

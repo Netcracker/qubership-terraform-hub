@@ -1,6 +1,6 @@
-postgresUser: postgres
-postgresPassword: "p@ssWOrD1"
-replicatorPassword: "replicator"
+postgresUser: ${{ secrets.POSTGRESUSER }}
+postgresPassword: ${{ secrets.POSTGRESPASSWORD }}
+replicatorPassword: ${{ secrets.REPLICATORPASSWORD }}
 
 ##  This section describes values for patroni-core deployment
 operator:
