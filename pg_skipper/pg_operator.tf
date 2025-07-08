@@ -7,7 +7,7 @@ resource "helm_release" "pg_operator" {
   create_namespace = true
   namespace = var.PG_INSTALL_NAMESPACE
   chart      = "../pgskipper-operator/charts/patroni-core"
-  timeout    = 1200
+  timeout    = 60
   #values     = ["../../pgskipper-operator/charts/patroni-core/values.yaml"]
   values = [file("values.yaml")]
 }
