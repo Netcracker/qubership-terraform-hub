@@ -41,13 +41,13 @@ jobs:
         with:
           terraform_version: 1.12.2
 
-#      - name: Setup kubectl
-#        uses: azure/setup-kubectl@v3
-#        with:
-#          version: 'v1.32.0'
-#
-#      - name: Setup Helm
-#        uses: azure/setup-helm@v3
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.32.0'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
 
       - name: Verify tools
         run: |
@@ -77,5 +77,5 @@ jobs:
           terraform init
           echo  "Namespace to install PG: ${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" 
           env
-          terraform plan -var "PG_INSTALL_NAMESPACE=pg-test-2123321"
+          terraform plan -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}"
 #          terraform apply -auto-approve
