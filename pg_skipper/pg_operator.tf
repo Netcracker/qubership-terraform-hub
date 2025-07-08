@@ -1,7 +1,3 @@
-variable "namespace" {
-  description = "namespace"
-}
-
 resource "helm_release" "pg_operator" {
   name       = "patroni-core"
   create_namespace = true
