@@ -1,7 +1,7 @@
 name: Terraform CI Install PG-Skipper
 
 on:
-  workflow_dispatch: # Запуск вручную через UI
+  workflow_dispatch:
     inputs:
       #environment:
       #  description: "Environment (dev/prod)"
@@ -78,5 +78,6 @@ jobs:
           pwd
           cd ./pg_skipper
           terraform init
-          terraform plan -var="namespace=${{ vars.PG_INSTALL_NAMESPACE }}"
+          echo ${{ vars.PG_INSTALL_NAMESPACE }}
+          terraform plan
 #          terraform apply -auto-approve
