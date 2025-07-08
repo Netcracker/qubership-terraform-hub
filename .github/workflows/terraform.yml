@@ -78,6 +78,6 @@ jobs:
           pwd
           cd ./pg_skipper
           terraform init
-          echo ${{ vars.PG_INSTALL_NAMESPACE }}
+          echo  "Namespace to install PG: ${{ vars.PG_INSTALL_NAMESPACE }}"
           terraform plan
 #          terraform apply -auto-approve
