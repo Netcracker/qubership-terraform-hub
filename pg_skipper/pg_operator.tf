@@ -1,6 +1,10 @@
+variable "namespace" {
+  description = "namespace"
+}
+
 resource "helm_release" "pg_operator" {
   name       = "patroni-core"
-  #namespace  = "pg-test-1"
+  namespace  = var.namespace
   create_namespace = true
   chart      = "../pgskipper-operator/charts/patroni-core"
   timeout    = 1200
