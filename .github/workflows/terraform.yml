@@ -71,9 +71,10 @@ jobs:
         run: kubectl get nodes
 
       - name: Terraform Init and Plan
-        env:
-          TF_VAR_namespace: ${{ vars.PG_INSTALL_NAMESPACE }}
         run: |
+          kubectl config current-context
+          kubectl config set-context --current --namespace=${{ vars.PG_INSTALL_NAMESPACE }}
+          kubectl get pods
           pwd
           cd ./pg_skipper
           terraform init
