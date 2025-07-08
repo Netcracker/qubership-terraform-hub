@@ -53,3 +53,4 @@ jobs:
           terraform version
           kubectl version --client
           helm version
+          aws --version
