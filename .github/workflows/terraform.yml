@@ -80,6 +80,8 @@ jobs:
           terraform init
           echo  "Namespace to install PG: ${{ vars.PG_INSTALL_NAMESPACE }}"
 #          sed -i '$i namespace = test11' pg_operator.tf
-          awk '{lines[NR]=$0} END{for(i=1;i<NR;i++) print lines[i]; print "  namespace=${{ vars.PG_INSTALL_NAMESPACE }}"; print lines[NR]}' pg_operator.tf > tmp && mv tmp pg_operator.tf
+          awk '{lines[NR]=$0} END{for(i=1;i<NR;i++) print lines[i]
+          print "  namespace=${{ vars.PG_INSTALL_NAMESPACE }}"
+          print lines[NR]}' pg_operator.tf > tmp && mv tmp pg_operator.tf
           terraform plan
 #          terraform apply -auto-approve
