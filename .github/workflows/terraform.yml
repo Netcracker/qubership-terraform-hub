@@ -78,5 +78,5 @@ jobs:
           pwd
           cd ./pg_skipper
           terraform init
-          terraform plan
+          terraform plan -var="namespace=${{ vars.PG_INSTALL_NAMESPACE }}"
 #          terraform apply -auto-approve
