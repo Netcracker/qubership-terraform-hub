@@ -72,9 +72,6 @@ jobs:
 
       - name: Terraform Init and Plan
         run: |
-#          kubectl config current-context
-#          kubectl config set-context --current --namespace=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}
-#          kubectl get pods
           pwd
           cd ./pg_skipper
           terraform init
