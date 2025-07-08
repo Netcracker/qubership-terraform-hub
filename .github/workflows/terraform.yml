@@ -68,3 +68,8 @@ jobs:
 
       - name: Verify cluster access
         run: kubectl get nodes
+
+      - name: Terraform Init and Plan
+        run: |
+          terraform init
+          terraform plan
