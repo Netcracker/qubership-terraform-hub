@@ -1,4 +1,4 @@
-name: Terraform CI
+name: Terraform CI Install PG-Skipper
 
 on:
   workflow_dispatch: # Запуск вручную через UI
