@@ -20,6 +20,9 @@ patroni:
   install: true
   # The number of Patroni (Postgres) nodes. One of these nodes is a master, and the others are replicas.
   replicas: 2
+  securityContext:
+    fsGroup: 26
+    runAsUser: 26
   resources:
     requests:
       cpu: 125m
