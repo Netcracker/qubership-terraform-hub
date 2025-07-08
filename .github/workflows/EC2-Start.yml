@@ -1,0 +1,44 @@
+name: Terraform CI Start EC2 Instances
+
+on:
+  schedule:
+    - cron: '0 6 * * 1-5'
+    
+  workflow_dispatch:
+    inputs:
+      tf_command:
+        description: "Terraform command"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Terraform Init and Plan
+        run: |
+          cd ./ec2-scheduled/start
+          terraform init
+          terraform plan -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}"
+          terraform apply -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}" -auto-approve
