@@ -78,4 +78,4 @@ jobs:
           echo  "Namespace to install PG: ${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" 
           env
           terraform plan -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}"
-#          terraform apply -auto-approve
+          terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
