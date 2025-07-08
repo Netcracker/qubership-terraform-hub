@@ -3,10 +3,10 @@ name: Terraform CI Install PG-Skipper
 on:
   workflow_dispatch: # Запуск вручную через UI
     inputs:
-      environment:
-        description: "Environment (dev/prod)"
-        required: true
-        default: "dev"
+      #environment:
+      #  description: "Environment (dev/prod)"
+      #  required: false
+      #  default: "dev"
       tf_command:
         description: "Terraform command"
         required: true
