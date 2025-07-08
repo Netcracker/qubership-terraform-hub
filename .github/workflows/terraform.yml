@@ -73,5 +73,6 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           pwd
+          cd ./pg_skipper
           terraform init
           terraform plan
