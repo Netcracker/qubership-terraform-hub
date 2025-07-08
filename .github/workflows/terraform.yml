@@ -71,9 +71,11 @@ jobs:
         run: kubectl get nodes
 
       - name: Terraform Init and Plan
+        env:
+          TF_VAR_namespace: ${{ vars.PG_INSTALL_NAMESPACE }}
         run: |
           pwd
           cd ./pg_skipper
           terraform init
           terraform plan
-          terraform apply -auto-approve
+#          terraform apply -auto-approve
