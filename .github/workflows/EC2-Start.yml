@@ -39,6 +39,7 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           cd ./ec2-scheduled/start
+          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 8 --max-size 9 --desired-capacity 8
           terraform init
           terraform plan -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}"
           terraform apply -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}" -auto-approve
