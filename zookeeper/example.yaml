@@ -1,0 +1,34 @@
+global:
+  name: zookeeper
+  enablePersistentVolumeCreation: false
+  secrets:
+    zooKeeper:
+      adminUsername: test-user
+      adminPassword: test-password
+      clientUsername: client-test
+      clientPassword: client-test
+      additionalUsers: user:pass
+zooKeeper:
+  replicas: 3
+  storage:
+    classname: gp2
+    size: 5Gi
+  quorumAuthEnabled: true
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+monitoring:
+  install: false
+backupDaemon:
+  install: true
+  backupStorage:
+    storageClass: gp2
+    volumeSize: 1Gi
+  backupSchedule: 0 * * * *
+  evictionPolicy: 0/1d,7d/delete
+  zooKeeperHost: zookeeper
+  zooKeeperPort: 2181
+  zooKeeperAdminUsername: test-user
+  zooKeeperAdminPassword: test-password
+  securityContext:
+    runAsUser: 1000
