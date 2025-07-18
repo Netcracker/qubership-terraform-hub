@@ -1,0 +1,23 @@
+global:
+  name: kafka
+  tls:
+    enabled: false
+  secrets:
+    kafka:
+      disableSecurity: true
+operator:
+  dockerImage: ghcr.io/netcracker/qubership-kafka-service-operator:main
+kafka:
+  install: true
+  storage:
+    size: 1Gi
+    className:
+      - gp2
+  enableAuditLogs: false
+  enableAuthorization: false
+  tls:
+    enabled: false
+  kraft:
+    enabled: false
+    migration: false
+    migrationTimeout: 600
