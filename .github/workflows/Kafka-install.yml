@@ -67,5 +67,6 @@ jobs:
       - name: Install Kafka
         run: |
           cd ./kafka
+          cat ./sample.yaml
           echo  "Namespace to install: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}" 
           helm install --namespace=${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }} --create-namespace -f ./sample.yaml kafka ../qubership-kafka/charts/helm/kafka
