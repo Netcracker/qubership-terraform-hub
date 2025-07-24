@@ -5,14 +5,19 @@ global:
   secrets:
     kafka:
       disableSecurity: true
-operator:
-  dockerImage: ghcr.io/netcracker/qubership-kafka-service-operator:main
+      zookeeperClientUsername: ${{ secrets.ZOOKEEPERUSER }}
+      zookeeperClientPassword: ${{ secrets.ZOOKEEPERUSER }}
 kafka:
   install: true
+  securityContext: {
+    "runAsUser": 1001,
+    "fsGroup": 1001
+  }  
   storage:
     size: 1Gi
     className:
       - gp2
+  zookeeperConnect: zookeeper.zookeeper:2181      
   enableAuditLogs: false
   enableAuthorization: false
   tls:
