@@ -5,8 +5,8 @@ global:
   secrets:
     kafka:
       disableSecurity: true
-      zookeeperClientUsername: ${{ secrets.ZOOKEEPERUSER }}
-      zookeeperClientPassword: ${{ secrets.ZOOKEEPERUSER }}
+      zookeeperClientUsername: "zclient"
+      zookeeperClientPassword: "zclient"
 kafka:
   install: true
   securityContext: {
