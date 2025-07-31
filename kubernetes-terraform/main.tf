@@ -1,3 +1,10 @@
+terraform {
+  backend "s3" {
+    bucket = "state-storage-terraform"  # Имя вашего бакета
+    key = "github-test/kubernetes-install.tfstate"  # Путь к файлу состояния
+    region  = "us-east-1"
+  }
+}
 provider "aws" {
   region = var.region
 }
