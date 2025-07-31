@@ -34,42 +34,42 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-#      - name: Setup Terraform
-#        uses: hashicorp/setup-terraform@v3
-#        with:
-#          terraform_version: 1.12.2
-#
-#      - name: Verify tools
-#        run: |
-#          terraform version
-#          kubectl version --client
-#          helm version
-#          aws --version
-#
-#      - name: Configure AWS credentials
-#        uses: aws-actions/configure-aws-credentials@v4
-#        with:
-#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-#
-#      - name: Terraform Init and Plan
-#        run: |
-#          pwd
-#          cd ./kubernetes-terraform
-#          terraform init
-#          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-#
-#  tf-apply:
-#    needs: tf-prepare
-#    runs-on: ubuntu-latest
-#    #environment: ${{ github.event.inputs.environment || 'dev' }}
-#
-#    steps:
-#      - name: Terraform Apply
-#        run: |
-#          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
-#          terraform state list
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Verify tools
+        run: |
+          terraform version
+          kubectl version --client
+          helm version
+          aws --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Terraform Init and Plan
+        run: |
+          pwd
+          cd ./kubernetes-terraform
+          terraform init
+          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
+
+  tf-apply:
+    needs: tf-prepare
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Terraform Apply
+        run: |
+          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform state list
 
 #  tf-destroy:
 #    runs-on: ubuntu-latest
