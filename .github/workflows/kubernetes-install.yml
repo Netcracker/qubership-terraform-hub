@@ -54,5 +54,5 @@ jobs:
           pwd
           cd ./kubernetes-terraform
           terraform init
-          terraform plan 
-          #terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
+          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
+          #terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve

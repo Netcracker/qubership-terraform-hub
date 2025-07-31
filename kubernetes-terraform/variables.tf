@@ -1,7 +1,6 @@
-variable "project_name" {
+variable "EKS_NEW_CLUSTERNAME" {
   description = "The name of the project."
   type        = string
-  default = "github-test"
 }
 
 variable "region" {

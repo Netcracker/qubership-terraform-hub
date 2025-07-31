@@ -10,7 +10,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name   = var.project_name
+  name   = var.EKS_NEW_CLUSTERNAME
 #  spot_price = data.aws_ec2_spot_price.current.spot_price + data.aws_ec2_spot_price.current.spot_price * 0.02
 
   vpc_cidr = var.vpc_cidr
@@ -55,7 +55,7 @@ module "eks_al2023" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "${local.name}"
+  cluster_name    = var.EKS_NEW_CLUSTERNAME
   cluster_version = "1.31"
 
   # EKS Addons
