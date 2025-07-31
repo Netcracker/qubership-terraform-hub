@@ -6,10 +6,10 @@ resource "aws_launch_template" "qubership" {
 
 resource "aws_autoscaling_group" "qubership" {
   capacity_rebalance  = true
-  desired_capacity    = 4
-  max_size            = 6
-  min_size            = 2
-  name                = "qubership"
+  desired_capacity    = 1
+  max_size            = 2
+  min_size            = 1
+  name                = "${local.name}"
   vpc_zone_identifier = module.vpc.private_subnets
 
   mixed_instances_policy {

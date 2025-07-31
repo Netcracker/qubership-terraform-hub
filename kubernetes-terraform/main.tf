@@ -55,7 +55,7 @@ module "eks_al2023" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "${local.name}-al2023"
+  cluster_name    = "${local.name}"
   cluster_version = "1.31"
 
   # EKS Addons
