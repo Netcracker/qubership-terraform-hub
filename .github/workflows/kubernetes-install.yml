@@ -130,4 +130,5 @@ jobs:
       - name: Terraform Destroy
         run: |
           cd ./kubernetes-terraform
+          terraform init
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
