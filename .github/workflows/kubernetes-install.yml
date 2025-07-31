@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "step" to run'
+        description: 'Type "apply" to run'
         required: true
         default: 'cancel'
       #environment:
@@ -70,15 +70,15 @@ jobs:
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
           terraform state list
 
-  tf-destroy:
-    runs-on: ubuntu-latest
-    #environment: ${{ github.event.inputs.environment || 'dev' }}
-
-    steps:
-      - name: Verify confirmation
-        if: ${{ github.event.inputs.confirm != 'destroy' }}
-        run: exit 1
-      - name: Terraform Destroy
-        run: |
-          cd ./kubernetes-terraform   
-          terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+#  tf-destroy:
+#    runs-on: ubuntu-latest
+#    #environment: ${{ github.event.inputs.environment || 'dev' }}
+#
+#    steps:
+#      - name: Verify confirmation
+#        if: ${{ github.event.inputs.confirm != 'destroy' }}
+#        run: exit 1
+#      - name: Terraform Destroy
+#        run: |
+#          cd ./kubernetes-terraform
+#          terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
