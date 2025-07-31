@@ -1,7 +1,7 @@
 variable "project_name" {
   description = "The name of the project."
   type        = string
-  default = "${{ variables.CLUSTERNAME }}"
+  default = "${{ variables.EKS_NEW_CLUSTERNAME }}"
 }
 
 variable "region" {
