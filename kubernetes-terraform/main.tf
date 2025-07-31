@@ -63,7 +63,7 @@ module "eks_al2023" {
   version = "~> 20.0"
 
   cluster_name    = var.EKS_NEW_CLUSTERNAME
-  cluster_version = "1.31"
+  cluster_version = "1.33"
 
   # EKS Addons
   cluster_addons = {
