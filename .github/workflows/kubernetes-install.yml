@@ -1,4 +1,4 @@
-name: Terraform CI Install PG-Skipper
+name: kubernetes-install
 
 on:
   workflow_dispatch:
