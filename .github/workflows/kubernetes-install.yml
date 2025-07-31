@@ -53,10 +53,6 @@ jobs:
         run: |
           pwd
           cd ./kubernetes-terraform
-          terraform init
-            -plugin-dir=/ci/terraform_plugins
-            -backend-config="bucket=${aws_s3_bucket_name}"
-            -backend-config="key=${sandbox_name}/${aws_s3_key_name}"
-            -backend-config="region=${aws_region}"          
+          terraform init     
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
           #terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
