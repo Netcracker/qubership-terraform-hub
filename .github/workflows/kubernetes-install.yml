@@ -1,25 +1,33 @@
 name: kubernetes-install
 
+#on:
+#  workflow_dispatch:
+#    inputs:
+#      confirm:
+#        description: 'Type "apply" to run'
+#        required: true
+#        default: 'cancel'
+#      #environment:
+#      #  description: "Environment (dev/prod)"
+#      #  required: false
+#      #  default: "dev"
+#      #tf_command:
+#        #description: "Terraform command"
+#        #required: true
+#        #default: "plan"
+#        #type: choice
+#        #options:
+#          #- plan
+#          #- apply
+#          #- destroy
+
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: 'Type "apply" to run'
-        required: true
-        default: 'cancel'
-      #environment:
-      #  description: "Environment (dev/prod)"
-      #  required: false
-      #  default: "dev"
-      #tf_command:
-        #description: "Terraform command"
-        #required: true
-        #default: "plan"
-        #type: choice
-        #options:
-          #- plan
-          #- apply
-          #- destroy
+      tf-prepare:
+        type: boolean
+      tf-destroy:
+        type: boolean
 
 jobs:
   tf-prepare:
@@ -27,9 +35,10 @@ jobs:
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
-      - name: Verify confirmation
-        if: ${{ github.event.inputs.confirm != 'apply' }}
-        run: exit 1
+      - id: get-selected-step
+        uses: joao-zanutto/get-selected@v1.1.1
+
+      - run: echo ${{ steps.get-selected-step.outputs.selected }}
 
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -66,9 +75,9 @@ jobs:
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
-      - name: Verify confirmation
-        if: ${{ github.event.inputs.confirm != 'apply' }}
-        run: exit 1
+#      - name: Verify confirmation
+#        if: ${{ github.event.inputs.confirm != 'apply' }}
+#        run: exit 1
 
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -95,17 +104,21 @@ jobs:
           pwd
           cd ./kubernetes-terraform
           terraform init
-          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
-          terraform state list
+          #terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          #terraform state list
 
   tf-destroy:
     runs-on: ubuntu-latest
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
-      - name: Verify confirmation
-        if: ${{ github.event.inputs.confirm != 'destroy' }}
-        run: exit 1
+      - id: get-selected-step
+        uses: joao-zanutto/get-selected@v1.1.1
+
+      - run: echo ${{ steps.get-selected-step.outputs.selected }}
+#      - name: Verify confirmation
+#        if: ${{ github.event.inputs.confirm != 'destroy' }}
+#        run: exit 1
 
       - name: Checkout Code
         uses: actions/checkout@v4
