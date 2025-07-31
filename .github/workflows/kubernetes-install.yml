@@ -3,18 +3,23 @@ name: kubernetes-install
 on:
   workflow_dispatch:
     inputs:
+      confirm:
+        description: 'Type "step" to run'
+        required: true
+        default: 'cancel'
       #environment:
       #  description: "Environment (dev/prod)"
       #  required: false
       #  default: "dev"
-      tf_command:
-        description: "Terraform command"
-        required: true
-        default: "plan"
-        type: choice
-        options:
-          - plan
-          - apply
+      #tf_command:
+        #description: "Terraform command"
+        #required: true
+        #default: "plan"
+        #type: choice
+        #options:
+          #- plan
+          #- apply
+          #- destroy
 
 jobs:
   tf-prepare:
@@ -22,6 +27,9 @@ jobs:
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
+      - name: Verify confirmation
+      - if: ${{ github.event.inputs.confirm != 'apply' }}
+      - run: exit 1
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -29,11 +37,6 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.12.2
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.32.0'
 
       - name: Verify tools
         run: |
@@ -55,4 +58,27 @@ jobs:
           cd ./kubernetes-terraform
           terraform init     
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-          #terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+
+  tf-apply:
+    needs: tf-prepare
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Terraform Apply
+        run: |
+          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform state list
+
+  tf-destroy:
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Verify confirmation
+        if: ${{ github.event.inputs.confirm != 'destroy' }}
+        run: exit 1
+      - name: Terraform Destroy
+        run: |
+          cd ./kubernetes-terraform   
+          terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
