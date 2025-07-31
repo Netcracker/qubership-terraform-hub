@@ -66,8 +66,35 @@ jobs:
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
+      - name: Verify confirmation
+        if: ${{ github.event.inputs.confirm != 'apply' }}
+        run: exit 1
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Verify tools
+        run: |
+          terraform version
+          aws --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
       - name: Terraform Apply
         run: |
+          pwd
+          cd ./kubernetes-terraform
+          terraform init
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
           terraform state list
 
