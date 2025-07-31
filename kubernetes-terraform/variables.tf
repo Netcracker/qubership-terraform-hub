@@ -1,7 +1,7 @@
 variable "project_name" {
   description = "The name of the project."
   type        = string
-  default = "${{ variables.EKS_NEW_CLUSTERNAME }}"
+  default = "github-test"
 }
 
 variable "region" {
