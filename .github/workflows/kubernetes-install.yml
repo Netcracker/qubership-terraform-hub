@@ -1,9 +1,12 @@
-name: kubernetes-install
+name: Kubernetes and Infra Install
 
 on:
   workflow_dispatch:
     inputs:
       tf-prepare:
+        type: boolean
+        default: false
+      tf-apply:
         type: boolean
         default: false
       tf-destroy:
@@ -14,8 +17,16 @@ on:
         default: false
 
 jobs:
+  debug-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
   tf-prepare:
-    if: ${{ github.event.inputs.tf-prepare == true }}
+    needs: debug-inputs
+    if: github.event.inputs.tf-prepare == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -47,8 +58,8 @@ jobs:
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
   tf-apply:
-    needs: tf-prepare
-    if: ${{ github.event.inputs.tf-prepare == true }}
+    needs: [debug-inputs, tf-prepare]
+    if: github.event.inputs.tf-apply == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -69,10 +80,11 @@ jobs:
       - name: Terraform Apply
         run: |
           cd ./kubernetes-terraform
+          terraform init
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-destroy:
-    if: ${{ github.event.inputs.tf-destroy == true }}
+    if: github.event.inputs.tf-destroy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -96,9 +108,9 @@ jobs:
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
-    if: ${{ github.event.inputs.pg-install == true }}
+    if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
-    needs: [tf-prepare, tf-apply]  # Зависит от создания кластера
+    needs: [tf-prepare, tf-apply]  # Depends on EKS creation status
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
