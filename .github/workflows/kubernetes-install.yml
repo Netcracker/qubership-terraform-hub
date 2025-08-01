@@ -28,6 +28,8 @@ on:
         type: boolean
       tf-destroy:
         type: boolean
+      pg-install:
+        type: boolean
 
 jobs:
   tf-prepare:
@@ -152,3 +154,76 @@ jobs:
           cd ./kubernetes-terraform
           terraform init
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+
+  pg-install:
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - id: get-selected-step
+        uses: joao-zanutto/get-selected@v1.1.1
+
+      - run: echo ${{ steps.get-selected-step.outputs.selected }}
+
+      - name: Verify confirmation
+        #if: ${{ steps.get-selected-step.outputs.selected != *"tf-prepare"* }}
+        if: !contains(steps.get-selected-step.outputs.selected, 'pg-install')
+        run: exit 1
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Clone public pgskipper-operator repo
+        uses: actions/checkout@v4
+        with:
+          repository: Netcracker/pgskipper-operator
+          path: pgskipper-operator
+
+      - name: Listing downloaded files
+        run: |
+          pwd
+          ls -R pgskipper-operator
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.32.0'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Verify tools
+        run: |
+          terraform version
+          kubectl version --client
+          helm version
+          aws --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Terraform Init and Plan
+        run: |
+          pwd
+          cd ./pg_skipper
+          terraform init
+          echo  "Namespace to install PG: ${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" 
+          env
+          terraform plan -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}"
+          terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
