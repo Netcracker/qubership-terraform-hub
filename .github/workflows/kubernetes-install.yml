@@ -116,7 +116,16 @@ jobs:
         run: |
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
-    
+      - name: Trigger PG install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'postgres-install.yml',
+              ref: 'main'
+            })
 
 #  pg-install:
 #    if: github.event.inputs.pg-install == 'true'
