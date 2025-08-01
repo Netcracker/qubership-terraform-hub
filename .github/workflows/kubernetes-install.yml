@@ -14,6 +14,13 @@ on:
         default: false
 
 jobs:
+  debug-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
   tf-prepare:
     if: ${{ github.event.inputs.tf-prepare == true }}
     runs-on: ubuntu-latest
