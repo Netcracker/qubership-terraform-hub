@@ -42,7 +42,7 @@ jobs:
 
       - name: Verify confirmation
         #if: ${{ steps.get-selected-step.outputs.selected != *"tf-prepare"* }}
-        if: {{ contains(steps.get-selected-step.outputs.selected, 'tf-prepare') != true }}
+        if: !contains(steps.get-selected-step.outputs.selected, 'tf-prepare')}
         run: exit 1
 
       - name: Checkout Code
@@ -124,7 +124,7 @@ jobs:
 
       - name: Verify confirmation
         #if: ${{ steps.get-selected-step.outputs.selected != *"tf-prepare"* }}
-        if: {{ contains(steps.get-selected-step.outputs.selected, 'tf-destroy') != true }}
+        if: !contains(steps.get-selected-step.outputs.selected, 'tf-destroy')
         run: exit 1
 
       - name: Checkout Code
