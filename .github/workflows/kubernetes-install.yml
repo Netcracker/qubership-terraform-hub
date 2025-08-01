@@ -124,7 +124,7 @@ jobs:
 
       - name: Verify confirmation
         #if: ${{ steps.get-selected-step.outputs.selected != *"tf-prepare"* }}
-        if: contains(steps.get-selected-step.outputs.selected, 'tf-prepare')
+        if: contains(steps.get-selected-step.outputs.selected, 'tf-destroy')
         run: exit 1
 
       - name: Checkout Code
