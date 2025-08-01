@@ -19,8 +19,6 @@ on:
 jobs:
   running-inputs:
     runs-on: ubuntu-latest
-    outputs:
-      cluster_name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
     steps:
       - name: Show inputs
         run: |
@@ -120,10 +118,9 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger PG install workflow
-        needs: running-inputs
         uses: actions/github-script@v6
         with:
-          EKS_CLUSTER_NAME: ${{ needs.running-inputs.outputs.cluster_name }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
