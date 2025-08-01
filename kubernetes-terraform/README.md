@@ -14,7 +14,7 @@ TF_VAR_PG_INSTALL_NAMESPACE
 
 3 Run action with needed checkmarks selected
 
-Improvements&plans:
+Planned improvements:
 rework tf state storage to bucket_name/cluster_name
 change other components run logic to call different actions
 include all infra components into checkbox
