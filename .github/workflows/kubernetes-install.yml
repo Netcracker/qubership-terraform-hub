@@ -17,7 +17,7 @@ on:
         default: false
 
 jobs:
-  debug-inputs:
+  running-inputs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
@@ -25,7 +25,7 @@ jobs:
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
   tf-prepare:
-    needs: debug-inputs
+    needs: running-inputs
     if: github.event.inputs.tf-prepare == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +58,7 @@ jobs:
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
   tf-apply:
-    needs: [debug-inputs, tf-prepare]
+    needs: [running-inputs, tf-prepare]
     if: github.event.inputs.tf-apply == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -111,35 +111,54 @@ jobs:
   pg-install:
     if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
-    needs: [tf-prepare, tf-apply]  # Depends on EKS creation status
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Clone pgskipper-operator
-        uses: actions/checkout@v4
-        with:
-          repository: Netcracker/pgskipper-operator
-          path: pgskipper-operator
-
-      - name: Setup kubectl and Helm
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.32.0'
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-
-      - name: Configure kubeconfig
+      - name: Show inputs
         run: |
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+      - name: Trigger PG install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'postgres-install.yml',
+              ref: 'main'
+            })
 
-      - name: Install PostgreSQL
-        run: |
-          cd ./pg_skipper
-          terraform init
-          terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
+#  pg-install:
+#    if: github.event.inputs.pg-install == 'true'
+#    runs-on: ubuntu-latest
+#    needs: [tf-prepare, tf-apply]  # Depends on EKS creation status
+#    steps:
+#      - name: Checkout Code
+#        uses: actions/checkout@v4
+#
+#      - name: Clone pgskipper-operator
+#        uses: actions/checkout@v4
+#        with:
+#          repository: Netcracker/pgskipper-operator
+#          path: pgskipper-operator
+#
+#      - name: Setup kubectl and Helm
+#        uses: azure/setup-kubectl@v3
+#        with:
+#          version: 'v1.32.0'
+#
+#      - name: Configure AWS credentials
+#        uses: aws-actions/configure-aws-credentials@v4
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+#
+#      - name: Configure kubeconfig
+#        run: |
+#          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+#
+#      - name: Install PostgreSQL
+#        run: |
+#          cd ./pg_skipper
+#          terraform init
+#          terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
