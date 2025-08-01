@@ -22,7 +22,8 @@ jobs:
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
   tf-prepare:
-    if: ${{ github.event.inputs.tf-prepare == true }}
+    needs: debug-inputs
+    if: ${{ github.event.inputs.tf-prepare }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
