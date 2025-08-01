@@ -41,7 +41,7 @@ jobs:
       - run: echo ${{ steps.get-selected-step.outputs.selected }}
 
       - name: Verify confirmation
-        if: ${{ steps.get-selected-step.outputs.selected == *"tf-prepare"* }}
+        if: ${{ steps.get-selected-step.outputs.selected =~ "tf-prepare" }}
         run: exit 1
 
       - name: Checkout Code
@@ -122,7 +122,7 @@ jobs:
       - run: echo ${{ steps.get-selected-step.outputs.selected }}
 
       - name: Verify confirmation
-        if: ${{ steps.get-selected-step.outputs.selected == *"tf-prepare"* }}
+        if: ${{ steps.get-selected-step.outputs.selected =~ "tf-prepare" }}
         run: exit 1
 
       - name: Checkout Code
