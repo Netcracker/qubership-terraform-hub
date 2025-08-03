@@ -1,4 +1,4 @@
-name: CI Install Consul
+name: Install Consul
 
 on:
   workflow_dispatch:

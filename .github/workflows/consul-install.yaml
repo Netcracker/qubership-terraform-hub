@@ -1,4 +1,4 @@
-name: CI Install Kafka
+name: Install Consul
 
 on:
   workflow_dispatch:
@@ -25,16 +25,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Clone public qubership-kafka repo
+      - name: Clone public qubership-consul repo
         uses: actions/checkout@v4
         with:
-            repository: Netcracker/qubership-kafka
-            path: qubership-kafka
+            repository: Netcracker/qubership-consul
+            path: qubership-consul
 
       - name: Listing downloaded files
         run: |
           pwd
-          ls -R qubership-kafka
+          ls -R qubership-consul
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
@@ -64,8 +64,8 @@ jobs:
       - name: Verify cluster access
         run: kubectl get nodes
 
-      - name: Install Kafka
+      - name: Install Consul
         run: |
-          cd ./kafka
-          echo  "Namespace to install: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}" 
-          helm install --namespace=${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }} --create-namespace -f ./sample.yaml kafka ../qubership-kafka/charts/helm/kafka
+          cd ./consul
+          echo  "Namespace to install: ${{ vars.TF_VAR_CONSUL_INSTALL_NAMESPACE }}" 
+          helm install --namespace=${{ vars.TF_VAR_CONSUL_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml consul-service ../qubership-consul/charts/helm/consul-service/
