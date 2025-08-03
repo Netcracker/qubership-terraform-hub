@@ -118,7 +118,6 @@ jobs:
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
-    needs: tf-apply
     if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
     steps:
