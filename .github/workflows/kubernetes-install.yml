@@ -120,7 +120,7 @@ jobs:
   pg-install:
     needs: tf-apply
     if: |
-      (needs.tf-apply.result != 'skipped') && github.event.inputs.tf-apply == 'true' \
+      (needs.tf-apply.result != 'skipped') && github.event.inputs.tf-apply == 'true'
       || (needs.tf-apply.result == 'skipped') && github.event.inputs.tf-apply == 'true'
     runs-on: ubuntu-latest
     steps:
