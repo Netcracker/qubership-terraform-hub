@@ -1,0 +1,71 @@
+name: CI Install Kafka
+
+on:
+  workflow_dispatch:
+    inputs:
+      #environment:
+      #  description: "Environment (dev/prod)"
+      #  required: false
+      #  default: "dev"
+      ci_command:
+        description: "command"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    #environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Clone public qubership-kafka repo
+        uses: actions/checkout@v4
+        with:
+          repository: Netcracker/qubership-kafka
+          path: qubership-kafka
+
+      - name: Listing downloaded files
+        run: |
+          pwd
+          ls -R qubership-kafka
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.32.0'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Verify tools
+        run: |
+          kubectl version --client
+          helm version
+          aws --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Install Kafka
+        run: |
+          cd ./kafka
+          echo  "Namespace to install: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}" 
+          helm install --namespace=${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }} --create-namespace -f ./sample.yaml kafka ../qubership-kafka/charts/helm/kafka
