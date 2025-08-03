@@ -137,65 +137,65 @@ jobs:
               ref: 'kuber-install-aws'
             })
 
-    consul-install:
-      if: github.event.inputs.consul-install == 'true'
-      runs-on: ubuntu-latest
-      steps:
-        - name: Show inputs
-          run: |
-            echo "tf-prepare: ${{ github.event.inputs.consul-install }}"
-            echo "JSON: ${{ toJSON(github.event.inputs) }}"
+  consul-install:
+    if: github.event.inputs.consul-install == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.consul-install }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
-        - name: Trigger Consul install workflow
-          uses: actions/github-script@v6
-          with:
-            script: |
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'consul-new-cluster-install.yml',
-                ref: 'kuber-install-aws'
-              })
+      - name: Trigger Consul install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'consul-new-cluster-install.yml',
+              ref: 'kuber-install-aws'
+            })
 
-    zookeeper-install:
-      if: github.event.inputs.zookeeper-install == 'true'
-      runs-on: ubuntu-latest
-      steps:
-        - name: Show inputs
-          run: |
-            echo "tf-prepare: ${{ github.event.inputs.zookeeper-install }}"
-            echo "JSON: ${{ toJSON(github.event.inputs) }}"
+  zookeeper-install:
+    if: github.event.inputs.zookeeper-install == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.zookeeper-install }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
-        - name: Trigger Zookeeper install workflow
-          uses: actions/github-script@v6
-          with:
-            script: |
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'zookeeper-new-cluster-install.yml',
-                ref: 'kuber-install-aws'
-              })
+      - name: Trigger Zookeeper install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'zookeeper-new-cluster-install.yml',
+              ref: 'kuber-install-aws'
+            })
 
-    kafka-install:
-      if: github.event.inputs.kafka-install == 'true'
-      runs-on: ubuntu-latest
-      steps:
-        - name: Show inputs
-          run: |
-            echo "tf-prepare: ${{ github.event.inputs.kafka-install }}"
-            echo "JSON: ${{ toJSON(github.event.inputs) }}"
+  kafka-install:
+    if: github.event.inputs.kafka-install == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.kafka-install }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
-        - name: Trigger Kafka install workflow
-          uses: actions/github-script@v6
-          with:
-            script: |
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'kafka-new-cluster-install.yml',
-                ref: 'kuber-install-aws'
-              })
+      - name: Trigger Kafka install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'kafka-new-cluster-install.yml',
+              ref: 'kuber-install-aws'
+            })
 
 #  pg-install:
 #    if: github.event.inputs.pg-install == 'true'
