@@ -1,8 +1,8 @@
-name: Terraform CI Stop EC2 Instances
+name: Scheduled Start of EC2 Instances
 
 on:
   schedule:
-    - cron: '0 17 * * 1-5'
+    - cron: '0 6 * * 1-5'
     
   workflow_dispatch:
     inputs:
@@ -38,9 +38,9 @@ jobs:
 
       - name: Terraform Init and Plan
         run: |
-          cd ./ec2-scheduled/stop
-          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
-          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
+          cd ./ec2-scheduled/start
+          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 8 --max-size 9 --desired-capacity 8
+          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 3 --max-size 4 --desired-capacity 3
           terraform init
           terraform plan -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}"
           terraform apply -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}" -auto-approve
