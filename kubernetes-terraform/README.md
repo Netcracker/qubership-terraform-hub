@@ -31,3 +31,4 @@ Create following secrets and variables
 - include all infra components into checkbox
 - improve k8s installation tf steps to include ingress creation
 - implement inventory file and example (default) settings file
+- implement dependency on another job (if skip then proceed or if running wait for finish then proceed)
