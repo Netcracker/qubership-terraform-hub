@@ -23,7 +23,7 @@ ui:
     hosts:
       - host:
 monitoring:
-  enabled: true
+  enabled: false
 backupDaemon:
   enabled: true
   storage: 1Gi
