@@ -66,11 +66,12 @@ module "eks_al2023" {
   cluster_version = "1.33"
 
   # EKS Addons
-  cluster_addons = {
-  #  coredns                = {}
+    cluster_addons = {
+    coredns                = {}
     eks-pod-identity-agent = {}
     kube-proxy             = {}
     vpc-cni                = {}
+    aws-efs-csi-driver     = {}
   }
 
   enable_cluster_creator_admin_permissions = true
