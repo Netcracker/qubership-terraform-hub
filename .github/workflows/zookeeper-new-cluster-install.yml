@@ -66,6 +66,8 @@ jobs:
 
       - name: Install Zookeeper
         run: |
+          pwd
+          ls
           cd ./zookeeper
           ls
           echo  "Namespace to install: ${{ vars.TF_VAR_ZOOKEEPER_INSTALL_NAMESPACE }}" 
