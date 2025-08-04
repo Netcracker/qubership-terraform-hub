@@ -1,4 +1,4 @@
-name: CI Install Kafka
+name: Install Kafka
 
 on:
   workflow_dispatch:
@@ -68,4 +68,4 @@ jobs:
         run: |
           cd ./kafka
           echo  "Namespace to install: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}" 
-          helm install --namespace=${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }} --create-namespace -f ./sample.yaml kafka ../qubership-kafka/charts/helm/kafka
+          helm install --namespace=${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }} --create-namespace -f ./sample.yaml kafka ../qubership-kafka/operator/charts/helm/kafka
