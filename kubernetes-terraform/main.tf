@@ -56,25 +56,29 @@ module "vpc" {
   tags = local.tags
 }
 
-
-# Create EKS Cluster
-module "eks_al2023" {
+module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
+  version = "~> 21.0"
 
-  cluster_name    = var.EKS_NEW_CLUSTERNAME
-  cluster_version = "1.33"
+  name    = var.EKS_NEW_CLUSTERNAME
+  kubernetes_version = "1.33"
 
   # EKS Addons
-    cluster_addons = {
+  addons = {
     coredns                = {}
-    eks-pod-identity-agent = {}
+    eks-pod-identity-agent = {
+      before_compute = true
+    }
     kube-proxy             = {}
-    vpc-cni                = {}
+    vpc-cni                = {
+      before_compute = true
+    }
     aws-efs-csi-driver     = {}
-  }
+    }
 
-  enable_cluster_creator_admin_permissions = true
+    endpoint_public_access = true
+    enable_cluster_creator_admin_permissions = true
+
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
