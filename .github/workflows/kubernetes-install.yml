@@ -25,23 +25,21 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
   running-inputs:
     runs-on: ubuntu-latest
-    concurrency:
-      group: example-group
-      cancel-in-progress: true
     steps:
       - name: Show inputs
         run: |
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
   tf-prepare:
-    #needs: running-inputs
+    needs: running-inputs
     if: github.event.inputs.tf-prepare == 'true'
     runs-on: ubuntu-latest
-    concurrency:
-      group: example-group
-      cancel-in-progress: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
