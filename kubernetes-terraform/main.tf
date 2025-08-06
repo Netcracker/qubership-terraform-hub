@@ -27,6 +27,7 @@ locals {
     project    = local.name
     Environment = "dev"
     requestor   = "Red-Team"
+    created-by  = "Terraform-CI"
   }
 }
 
@@ -93,9 +94,9 @@ module "eks" {
       instance_types = ["m6i.large"]
       capacity_type  = "SPOT"
 
-      min_size     = 1
-      max_size     = 2
-      desired_size = 1
+      min_size     = 3
+      max_size     = 4
+      desired_size = 3
     }
   }
   tags = local.tags

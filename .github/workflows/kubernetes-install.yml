@@ -25,7 +25,10 @@ on:
         type: boolean
         default: false
 
-jobs:
+concurrency:
+  group: kubernetes-installation
+  cancel-in-progress: true
+
   running-inputs:
     runs-on: ubuntu-latest
     steps:
