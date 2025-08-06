@@ -25,10 +25,11 @@ on:
         type: boolean
         default: false
 
-  concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   running-inputs:
     runs-on: ubuntu-latest
     steps:
