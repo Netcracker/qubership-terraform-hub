@@ -28,10 +28,6 @@ on:
 
 
 jobs:
-  concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
-
   running-inputs:
     runs-on: ubuntu-latest
     steps:
