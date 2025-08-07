@@ -68,4 +68,4 @@ jobs:
         run: |
           cd ./zookeeper
           echo  "Namespace to install: ${{ vars.TF_VAR_ZOOKEEPER_INSTALL_NAMESPACE }}" 
-          helm install --namespace=${{ vars.TF_VAR_ZOOKEEPER_INSTALL_NAMESPACE }} --create-namespace -f ./example.yaml zookeeper-service ../qubership-zookeeper/charts/helm/zookeeper-service
+          helm install --namespace=${{ vars.TF_VAR_ZOOKEEPER_INSTALL_NAMESPACE }} --create-namespace -f ./example.yaml zookeeper-service ../qubership-zookeeper/operator/charts/helm/zookeeper-service

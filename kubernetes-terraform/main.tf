@@ -27,6 +27,7 @@ locals {
     project    = local.name
     Environment = "dev"
     requestor   = "Red-Team"
+    created-by  = "Terraform-CI"
   }
 }
 
@@ -56,26 +57,62 @@ module "vpc" {
   tags = local.tags
 }
 
-
-# Create EKS Cluster
-module "eks_al2023" {
+module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
+  version = "~> 21.0"
 
-  cluster_name    = var.EKS_NEW_CLUSTERNAME
-  cluster_version = "1.33"
+  name    = var.EKS_NEW_CLUSTERNAME
+  kubernetes_version = "1.33"
 
   # EKS Addons
-  cluster_addons = {
-  #  coredns                = {}
-    eks-pod-identity-agent = {}
+  addons = {
+    coredns                = {}
+    eks-pod-identity-agent = {
+      before_compute = true
+    }
     kube-proxy             = {}
-    vpc-cni                = {}
-  }
+    vpc-cni                = {
+      before_compute = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent              = true
+      service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
+    }
+    }
+
+    endpoint_public_access = true
+    enable_cluster_creator_admin_permissions = true
+    create_cloudwatch_log_group = false
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  eks_managed_node_groups = {
+    example = {
+      # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
+      ami_type       = "AL2023_x86_64_STANDARD"
+      instance_types = ["m6i.large"]
+      capacity_type  = "SPOT"
+
+      min_size     = 3
+      max_size     = 4
+      desired_size = 3
+    }
+  }
   tags = local.tags
 }
 
+module "ebs_csi_irsa_role" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
+
+  role_name             = "ebs-csi"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}

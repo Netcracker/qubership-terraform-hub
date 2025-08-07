@@ -17,7 +17,7 @@ kafka:
     size: 1Gi
     className:
       - gp2
-  zookeeperConnect: zookeeper.zookeeper:2181      
+  zookeeperConnect: zookeeper.zookeeper-test:2181
   enableAuditLogs: false
   enableAuthorization: false
   tls:

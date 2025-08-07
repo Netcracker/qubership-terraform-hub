@@ -15,7 +15,7 @@ output "private_subnets" {
 
 output "kubernetes_api_server" {
   description = "Kubernetes API server endpoint"
-  value       = module.eks_al2023.cluster_endpoint
+  value       = module.eks.cluster_endpoint
 }
 
 
