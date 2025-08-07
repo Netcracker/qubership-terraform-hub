@@ -121,9 +121,7 @@ jobs:
 
   pg-install:
     needs: tf-apply
-    if: |
-      (needs.tf-apply.result != 'skipped') && github.event.inputs.tf-apply == 'true'
-      || (needs.tf-apply.result == 'skipped') && github.event.inputs.tf-apply == 'true'
+    if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
@@ -139,10 +137,11 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'postgres-new-cluster-install.yml',
-              ref: 'kuber-install-aws'
+              ref: 'main'
             })
 
   consul-install:
+    needs: tf-apply
     if: github.event.inputs.consul-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -159,10 +158,11 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'consul-new-cluster-install.yml',
-              ref: 'kuber-install-aws'
+              ref: 'main'
             })
 
   zookeeper-install:
+    needs: tf-apply
     if: github.event.inputs.zookeeper-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -179,10 +179,11 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'zookeeper-new-cluster-install.yml',
-              ref: 'kuber-install-aws'
+              ref: 'main'
             })
 
   kafka-install:
+    needs: [tf-apply, zookeeper-install]
     if: github.event.inputs.kafka-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -199,41 +200,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'kafka-new-cluster-install.yml',
-              ref: 'kuber-install-aws'
+              ref: 'main'
             })
-
-#  pg-install:
-#    if: github.event.inputs.pg-install == 'true'
-#    runs-on: ubuntu-latest
-#    needs: [tf-prepare, tf-apply]  # Depends on EKS creation status
-#    steps:
-#      - name: Checkout Code
-#        uses: actions/checkout@v4
-#
-#      - name: Clone pgskipper-operator
-#        uses: actions/checkout@v4
-#        with:
-#          repository: Netcracker/pgskipper-operator
-#          path: pgskipper-operator
-#
-#      - name: Setup kubectl and Helm
-#        uses: azure/setup-kubectl@v3
-#        with:
-#          version: 'v1.32.0'
-#
-#      - name: Configure AWS credentials
-#        uses: aws-actions/configure-aws-credentials@v4
-#        with:
-#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-#
-#      - name: Configure kubeconfig
-#        run: |
-#          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-#
-#      - name: Install PostgreSQL
-#        run: |
-#          cd ./pg_skipper
-#          terraform init
-#          terraform apply -var "PG_INSTALL_NAMESPACE=${{ vars.TF_VAR_PG_INSTALL_NAMESPACE }}" -auto-approve
