@@ -63,6 +63,9 @@ module "eks" {
 
   name    = var.EKS_NEW_CLUSTERNAME
   kubernetes_version = "1.33"
+  upgrade_policy = {
+    support_type = "STANDARD"
+  }
 
   # EKS Addons
   addons = {
