@@ -48,6 +48,7 @@ jobs:
           ENV_VAR: ${{ vars.ENV_VAR }}
   tf-prepare:
     needs: running-inputs
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.tf-prepare == 'true'
     runs-on: ubuntu-latest
     steps:
