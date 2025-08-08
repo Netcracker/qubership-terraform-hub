@@ -42,7 +42,7 @@ jobs:
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
           echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-          echo "Test variable value: ${{ vars.TESTVAR }}"
+          echo "Test variable value: ${{ vars.ENV_VAR }}"
   tf-prepare:
     needs: running-inputs
     if: github.event.inputs.tf-prepare == 'true'
