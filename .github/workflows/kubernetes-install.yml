@@ -34,11 +34,11 @@ on:
 jobs:
   running-inputs:
     runs-on: ubuntu-latest
-    env:
-      TESTVAR: ${{ vars.TESTVAR }}
     steps:
       - name: Show inputs
         run: |
+          env:
+          TESTVAR: ${{ vars.TESTVAR }}
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
           echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
