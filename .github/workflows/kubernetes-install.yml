@@ -82,6 +82,7 @@ jobs:
 
   tf-apply:
     needs: [running-inputs, tf-prepare]
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.tf-apply == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -108,6 +109,7 @@ jobs:
 
   tf-destroy:
     if: github.event.inputs.tf-destroy == 'true'
+    environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -133,6 +135,7 @@ jobs:
 
   pg-install:
     needs: tf-apply
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -154,6 +157,7 @@ jobs:
 
   consul-install:
     needs: tf-apply
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.consul-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -175,6 +179,7 @@ jobs:
 
   zookeeper-install:
     needs: tf-apply
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.zookeeper-install == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -196,6 +201,7 @@ jobs:
 
   kafka-install:
     needs: [tf-apply, zookeeper-install]
+    environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.kafka-install == 'true'
     runs-on: ubuntu-latest
     steps:
