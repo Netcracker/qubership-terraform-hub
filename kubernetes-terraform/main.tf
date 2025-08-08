@@ -28,6 +28,7 @@ locals {
     Environment = "dev"
     requestor   = "Red-Team"
     created-by  = "Terraform-CI"
+    cost-usage = "Terraform-CI"
   }
 }
 
