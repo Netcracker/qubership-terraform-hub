@@ -39,7 +39,7 @@ jobs:
         run: |
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
-          echo "${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
+          echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
   tf-prepare:
     needs: running-inputs
     if: github.event.inputs.tf-prepare == 'true'
