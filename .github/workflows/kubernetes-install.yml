@@ -35,14 +35,14 @@ jobs:
   running-inputs:
     runs-on: ubuntu-latest
     env:
-      TEST_VAR: ${{ vars.TESTVAR }}
+      TESTVAR: ${{ vars.TESTVAR }}
     steps:
       - name: Show inputs
         run: |
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
           echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-          echo "Test variable value: ${{ TEST_VAR }}"
+          echo "Test variable value: ${{ TESTVAR }}"
   tf-prepare:
     needs: running-inputs
     if: github.event.inputs.tf-prepare == 'true'
