@@ -28,6 +28,7 @@ locals {
     Environment = "dev"
     requestor   = "Red-Team"
     created-by  = "Terraform-CI"
+    cost-usage = local.name
   }
 }
 
@@ -63,6 +64,9 @@ module "eks" {
 
   name    = var.EKS_NEW_CLUSTERNAME
   kubernetes_version = "1.33"
+  upgrade_policy = {
+    support_type = "STANDARD"
+  }
 
   # EKS Addons
   addons = {

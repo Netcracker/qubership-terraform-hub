@@ -33,3 +33,4 @@ Create following secrets and variables
 - implement inventory file and example (default) settings file
 - implement dependency on another job (if skip then proceed or if running wait for finish then proceed)
 - implement cluster readiness/availability check after installation
+- change eks cluster support type extended > standart
