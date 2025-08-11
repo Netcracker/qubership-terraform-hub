@@ -2,7 +2,7 @@ name: Scheduled Start of EC2 Instances
 
 on:
   schedule:
-    - cron: ' '
+    - cron: ' 0 0 31 2 * '
     
   workflow_dispatch:
     inputs:
