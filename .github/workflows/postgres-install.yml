@@ -26,7 +26,6 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           echo ${{ vars.EKS_CLUSTER_NAME }}
-
 #      - name: Checkout Code
 #        uses: actions/checkout@v4
 #
