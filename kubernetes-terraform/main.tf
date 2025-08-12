@@ -92,8 +92,9 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-    local.projectname = {
+      name = {
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
+      name           = local.projectname
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["m6i.large"]
       capacity_type  = "SPOT"
