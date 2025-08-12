@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
-    bucket = "state-storage-terraform"  # Имя вашего бакета
-    key = "github-test/kubernetes-install.tfstate"  # Путь к файлу состояния
+    bucket = "state-storage-terraform"  # Bucket name
+    key = "github-test/kubernetes-install.tfstate"  # State filename
     region  = "us-east-1"
   }
 }
@@ -62,7 +62,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.0"
 
-  name    = var.EKS_NEW_CLUSTERNAME
+  name    = local.projectname
   kubernetes_version = "1.33"
   upgrade_policy = {
     support_type = "STANDARD"
@@ -92,7 +92,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-    local.projectname = {
+      name = {
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["m6i.large"]
