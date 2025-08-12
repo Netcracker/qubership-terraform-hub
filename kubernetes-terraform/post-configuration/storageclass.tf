@@ -1,4 +1,4 @@
-variable "TF_VAR_EKS_NEW_CLUSTERNAME" {
+variable "EKS_NEW_CLUSTERNAME" {
   type        = string
 }
 
@@ -23,6 +23,6 @@ resource "kubernetes_storage_class" "aws-ebs-csi-gp2-storage-class" {
   parameters = {
     type      = "gp2"
     fsType    = "ext4"
-    tagSpecification_1 = "cost-usage=${var.TF_VAR_EKS_NEW_CLUSTERNAME}"
+    tagSpecification_1 = "cost-usage=${var.EKS_NEW_CLUSTERNAME}"
   }
 }
