@@ -17,18 +17,18 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name   = var.EKS_NEW_CLUSTERNAME
+  projectname   = var.EKS_NEW_CLUSTERNAME
 #  spot_price = data.aws_ec2_spot_price.current.spot_price + data.aws_ec2_spot_price.current.spot_price * 0.02
 
   vpc_cidr = var.vpc_cidr
   azs      = slice(data.aws_availability_zones.available.names, 0, 3)
 
   tags = {
-    project    = local.name
+    project    = local.projectname
     Environment = "dev"
     requestor   = "Red-Team"
     created-by  = "Terraform-CI"
-    cost-usage = local.name
+    cost-usage = local.projectname
   }
 }
 
@@ -36,7 +36,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name = local.name
+  name = local.projectname
   cidr = local.vpc_cidr
 
   azs             = local.azs
@@ -92,7 +92,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-    example = {
+    local.projectname = {
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["m6i.large"]

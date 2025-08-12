@@ -19,6 +19,6 @@ resource "kubernetes_storage_class" "aws-ebs-csi-gp2-storage-class" {
   parameters = {
     type      = "gp2"
     fsType    = "ext4"
-    tagSpecification_1 = "cost-usage=${local.name}"
+    tagSpecification_1 = "cost-usage=${local.projectname}"
   }
 }
