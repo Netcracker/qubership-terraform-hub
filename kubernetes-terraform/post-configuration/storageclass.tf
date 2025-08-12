@@ -1,3 +1,7 @@
+variable "projectname" {
+  type        = string
+}
+
 resource "null_resource" "delete_storage_class" {
   provisioner "local-exec" {
     command = "kubectl delete storageclass gp2"
@@ -19,6 +23,6 @@ resource "kubernetes_storage_class" "aws-ebs-csi-gp2-storage-class" {
   parameters = {
     type      = "gp2"
     fsType    = "ext4"
-    tagSpecification_1 = "cost-usage=${local.projectname}"
+    tagSpecification_1 = "cost-usage=${var.projectname}"
   }
 }
