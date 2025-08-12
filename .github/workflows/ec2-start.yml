@@ -2,7 +2,7 @@ name: Scheduled Start of EC2 Instances
 
 on:
   schedule:
-    - cron: '0 6 * * 1-5'
+    - cron: "0 9 * * 1-5"
     
   workflow_dispatch:
     inputs:
@@ -17,6 +17,7 @@ on:
 
 jobs:
   terraform:
+    if: false #Disable job
     runs-on: ubuntu-latest
     #environment: ${{ github.event.inputs.environment || 'dev' }}
 
