@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
-    bucket = "state-storage-terraform"  # Bucket name
-    key = "kubernetes-install.tfstate"  # State filename
+    bucket = "state-storage-terraform"  # Name of the bucket
+    key = "github-test/kubernetes-install.tfstate"  # Path to the state file
     region  = "us-east-1"
   }
 }
