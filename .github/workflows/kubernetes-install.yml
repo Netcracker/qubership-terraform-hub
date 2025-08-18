@@ -75,6 +75,8 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           echo ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          terraform workspace list
           terraform init
           terraform plan -backend-config="key=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
