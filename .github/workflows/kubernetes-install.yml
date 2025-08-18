@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment (dev/prod)"
+        description: "Environment Name"
         required: false
         default: "dev"
       tf-prepare:
@@ -75,7 +75,10 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
           terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
   tf-apply:
@@ -103,7 +106,10 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
           terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-post-install:
@@ -134,7 +140,10 @@ jobs:
         run: |
           cd ./kubernetes-terraform/post-configuration/
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
           terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-destroy:
@@ -161,7 +170,10 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
           terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
