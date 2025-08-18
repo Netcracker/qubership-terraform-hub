@@ -74,10 +74,8 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           cd ./kubernetes-terraform
-          echo ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform workspace list
           terraform init
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
   tf-apply:
@@ -105,6 +103,7 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-post-install:
@@ -135,6 +134,7 @@ jobs:
         run: |
           cd ./kubernetes-terraform/post-configuration/
           terraform init
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-destroy:
@@ -161,7 +161,8 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
-          terraform destroy -backend-config="key=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
     needs: tf-post-install
