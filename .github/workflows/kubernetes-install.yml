@@ -109,6 +109,7 @@ jobs:
           terraform init
           if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
           terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          echo "Create new env for TF state"
           fi
           terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
