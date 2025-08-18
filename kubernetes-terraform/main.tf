@@ -17,18 +17,18 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name   = var.EKS_NEW_CLUSTERNAME
+  projectname   = var.EKS_NEW_CLUSTERNAME
 #  spot_price = data.aws_ec2_spot_price.current.spot_price + data.aws_ec2_spot_price.current.spot_price * 0.02
 
   vpc_cidr = var.vpc_cidr
   azs      = slice(data.aws_availability_zones.available.names, 0, 3)
 
   tags = {
-    project    = local.name
+    project    = local.projectname
     Environment = "dev"
     requestor   = "Red-Team"
     created-by  = "Terraform-CI"
-    cost-usage = local.name
+    cost-usage = local.projectname
   }
 }
 
@@ -36,7 +36,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name = local.name
+  name = local.projectname
   cidr = local.vpc_cidr
 
   azs             = local.azs
@@ -62,7 +62,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.0"
 
-  name    = var.EKS_NEW_CLUSTERNAME
+  name    = local.projectname
   kubernetes_version = "1.33"
   upgrade_policy = {
     support_type = "STANDARD"
@@ -92,8 +92,9 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-    example = {
+      name = {
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
+      name           = local.projectname
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["m6i.large"]
       capacity_type  = "SPOT"
@@ -110,7 +111,7 @@ module "ebs_csi_irsa_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
 
-  role_name             = "ebs-csi"
+  role_name             = "${var.EKS_NEW_CLUSTERNAME}-ebs-csi"
   attach_ebs_csi_policy = true
 
   oidc_providers = {

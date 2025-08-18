@@ -1,28 +1,19 @@
-name: Terraform Install PG-Skipper
+name: Install PG-Skipper
 
 on:
   workflow_dispatch:
     inputs:
-      #environment:
-      #  description: "Environment (dev/prod)"
-      #  required: false
-      #  default: "dev"
-      tf_command:
-        description: "Terraform command"
-        required: true
-        default: "plan"
-        type: choice
-        options:
-          - plan
-          - apply
+      environment:
+        description: "Environment Name"
+        required: false
+        default: "dev"
 
 jobs:
-  terraform:
+  Install-PG-Skipper:
+    environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
-    #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
-
       - name: Checkout Code
         uses: actions/checkout@v4
 

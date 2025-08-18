@@ -3,23 +3,15 @@ name: Install Consul
 on:
   workflow_dispatch:
     inputs:
-      #environment:
-      #  description: "Environment (dev/prod)"
-      #  required: false
-      #  default: "dev"
-      ci_command:
-        description: "command"
-        required: true
-        default: "plan"
-        type: choice
-        options:
-          - plan
-          - apply
+      environment:
+        description: "Environment Name"
+        required: false
+        default: "dev"
 
 jobs:
-  CI:
+  Install-Consul:
+    environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
-    #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout Code

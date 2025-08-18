@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment (dev/prod)"
+        description: "Environment Name"
         required: false
         default: "dev"
       tf-prepare:
@@ -41,8 +41,6 @@ jobs:
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
           echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-          echo "Test variable value: ${{ vars.TESTVAR }}"
-          echo "Test variable value: ${{ vars.ENV_VAR }}"
         env:
           ENV_VAR: ${{ vars.ENV_VAR }}
   tf-prepare:
@@ -77,6 +75,11 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          echo "Create new env for TF state"
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
   tf-apply:
@@ -104,6 +107,45 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          echo "Create new env for TF state"
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+
+  tf-post-install:
+    needs: tf-apply
+    environment: "${{github.event.inputs.environment}}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+
+      - name: Terraform Post Install
+        run: |
+          cd ./kubernetes-terraform/post-configuration/
+          terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-destroy:
@@ -130,10 +172,15 @@ jobs:
         run: |
           cd ./kubernetes-terraform
           terraform init
+          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
+          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          echo "Create new env for TF state"
+          fi
+          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
-    needs: tf-apply
+    needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.pg-install == 'true'
     runs-on: ubuntu-latest
@@ -155,7 +202,7 @@ jobs:
             })
 
   consul-install:
-    needs: tf-apply
+    needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.consul-install == 'true'
     runs-on: ubuntu-latest
@@ -177,7 +224,7 @@ jobs:
             })
 
   zookeeper-install:
-    needs: tf-apply
+    needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.zookeeper-install == 'true'
     runs-on: ubuntu-latest
@@ -199,7 +246,7 @@ jobs:
             })
 
   kafka-install:
-    needs: [tf-apply, zookeeper-install]
+    needs: [tf-post-install, zookeeper-install]
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.kafka-install == 'true'
     runs-on: ubuntu-latest
