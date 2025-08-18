@@ -41,8 +41,6 @@ jobs:
           echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
           echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
-          echo "Test variable value: ${{ vars.TESTVAR }}"
-          echo "Test variable value: ${{ vars.ENV_VAR }}"
         env:
           ENV_VAR: ${{ vars.ENV_VAR }}
   tf-prepare:
@@ -76,6 +74,7 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           cd ./kubernetes-terraform
+          echo ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           terraform init
           terraform plan -backend-config="key=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
 
