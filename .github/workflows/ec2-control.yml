@@ -1,0 +1,76 @@
+name: EC2 Instance Control
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        description: 'AWS region where the EC2 instance is located'
+        required: true
+        type: string
+        default: 'us-east-1'
+      instance_id:
+        description: 'EC2 instance ID to control'
+        required: true
+        type: string
+      action:
+        description: 'Action to perform (start or stop)'
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+
+jobs:
+  control-ec2-instance:
+    name: Control EC2 Instance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Validate action input
+        run: |
+          if [ "${{ inputs.action }}" != "start" ] && [ "${{ inputs.action }}" != "stop" ]; then
+            echo "Error: Action must be either 'start' or 'stop'"
+            exit 1
+          fi
+
+      - name: ${{ inputs.action }} EC2 instance
+        run: |
+          if [ "${{ inputs.action }}" == "start" ]; then
+            echo "Starting instance ${{ inputs.instance_id }}"
+            aws ec2 start-instances --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+          else
+            echo "Stopping instance ${{ inputs.instance_id }}"
+            aws ec2 stop-instances --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+          fi
+
+      - name: Wait for instance to reach desired state
+        run: |
+          if [ "${{ inputs.action }}" == "start" ]; then
+            echo "Waiting for instance to start..."
+            aws ec2 wait instance-running --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+            echo "Instance is now running"
+          else
+            echo "Waiting for instance to stop..."
+            aws ec2 wait instance-stopped --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+            echo "Instance is now stopped"
+          fi
+
+      - name: Get instance status
+        run: |
+          aws ec2 describe-instances \
+            --instance-ids ${{ inputs.instance_id }} \
+            --region ${{ inputs.aws_region }} \
+            --query "Reservations[0].Instances[0].State.Name" \
+            --output text
