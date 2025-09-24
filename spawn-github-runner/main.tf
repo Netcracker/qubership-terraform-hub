@@ -44,7 +44,7 @@ resource "aws_instance" "test" {
   #mkdir actions-runner && cd actions-runner
   curl -o actions-runner-linux-x64-2.328.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.328.0/actions-runner-linux-x64-2.328.0.tar.gz
   tar xzf ./actions-runner-linux-x64-2.328.0.tar.gz
-  ./config.sh --url https://github.com/Netcracker/qubership-terraform-hub --token BNVUPA5ZGJWY77ATSWD3CJLIZLF4E --ephemeral
+  ./config.sh --url https://github.com/Netcracker/qubership-terraform-hub --token ${var.github_token} --ephemeral
   ./run.sh
   EOL
 
