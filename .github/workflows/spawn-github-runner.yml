@@ -59,7 +59,7 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Terraform Plan
         run: |
@@ -69,11 +69,11 @@ jobs:
             -var="github_repo=${{ github.event.repository.name }}" \
             -var="instance_type=${{ github.event.inputs.instance_type }}" \
             -out=tfplan
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Get Runner Info
         id: runner-info
@@ -85,7 +85,7 @@ jobs:
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
           echo "runner_name=$RUNNER_NAME" >> $GITHUB_OUTPUT
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Wait for runner registration
         run: |
@@ -138,7 +138,7 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Terraform Destroy
         run: |
@@ -146,7 +146,7 @@ jobs:
             -var="github_token=dummy-token" \
             -var="github_org=${{ github.repository_owner }}" \
             -var="github_repo=${{ github.event.repository.name }}"
-        working-directory: ../spawn-github-runner
+        working-directory: ./spawn-github-runner
 
       - name: Update destruction summary
         run: |
