@@ -69,11 +69,16 @@ jobs:
             -var="github_repo=${{ github.event.repository.name }}" \
             -var="instance_type=${{ github.event.inputs.instance_type }}" \
             -out=tfplan
+            
         working-directory: ./spawn-github-runner
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
         working-directory: ./spawn-github-runner
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ../spawn-github-runner
 
       - name: Get Runner Info
         id: runner-info
@@ -140,6 +145,7 @@ jobs:
         run: terraform init
         working-directory: ./spawn-github-runner
 
+
       - name: Terraform Destroy
         run: |
           terraform destroy -auto-approve \
@@ -147,6 +153,7 @@ jobs:
             -var="github_org=${{ github.repository_owner }}" \
             -var="github_repo=${{ github.event.repository.name }}"
         working-directory: ./spawn-github-runner
+
 
       - name: Update destruction summary
         run: |
@@ -182,5 +189,5 @@ jobs:
                 runner_id: runner.id,
               });
             }
-            
+
             core.setOutput('removed_count', offlineRunners.length);
