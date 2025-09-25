@@ -269,6 +269,7 @@ jobs:
               workflow_id: 'kafka-new-cluster-install.yml',
               ref: 'main'
             })
+
   rabbitmq-install:
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
