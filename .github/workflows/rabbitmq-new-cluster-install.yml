@@ -68,6 +68,5 @@ jobs:
           ls ./qubership-rabbitmq/operator/charts/helm/rabbitmq/
           cd ./rabbitmq
           echo  "Namespace to install Rabbit-MQ: ${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
-          env
           echo "Starting Helm install"
           helm install --namespace=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml rabbitmq-service ../qubership-rabbitmq/operator/charts/helm/rabbitmq/
