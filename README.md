@@ -57,8 +57,6 @@ Documentation for individual tool/script can be found in docs folder, contents a
 
    > **Note:** Consult the individual workflow docs for specific input parameters and examples.
 
-Need to contribute? Read the fork workflow: [Fork Sequence Guide](docs/fork-sequence.md).
-
 ---
 
 ## 📘 Standards & Change Policy
