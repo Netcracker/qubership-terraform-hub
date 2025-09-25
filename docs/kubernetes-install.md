@@ -36,7 +36,7 @@ Collection of scripts, that provision new EKS clusters and infra componennts
 | Variable  | TF_VAR_ZOOKEEPER_INSTALL_NAMESPACE | Namespace, where Zookeeper will be installed                        |
 
 3. Navigate to Github Actions
-4. Run workflow Kubernetes and Infra Install with requred parameters, supported:
+4. Run workflow Kubernetes and Infra Install with required parameters, supported:
 - EKS Install
 - EKS Delete previously provisioned EKS cluster
 - Install Consul
