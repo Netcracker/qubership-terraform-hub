@@ -65,10 +65,8 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           pwd
+          ls ../qubership-rabbitmq/operator/charts/helm/rabbitmq/
           cd ./rabbitmq
-          terraform init
           echo  "Namespace to install Rabbit-MQ: ${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
           env
           helm install --namespace=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml rabbitmq-service ../qubership-rabbitmq/operator/charts/helm/rabbitmq/
-#          terraform plan -var "RABBIT_INSTALL_NAMESPACE=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
-#          terraform apply -var "RABBIT_INSTALL_NAMESPACE=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}" -auto-approve
