@@ -289,5 +289,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'rabbitmq-new-cluster-install.yml',
-              ref: 'main'
+              ref: 'rabbitmq-mq-flow'
             })
