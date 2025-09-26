@@ -44,7 +44,7 @@ operator:
   apiGroup: "qubership.org"
   pullPolicy: "Always"
   restartScheduler:
-    dockerImage: bitnami/kubectl:1.30.6
+    dockerImage: bitnami/kubectl:latest
     enabled: true
     schedule: "0 0 * * *"
     affinity: {}
