@@ -23,7 +23,9 @@ global:
       clusterIssuerName: ""
   podReadinessTimeout: 360
   customLabels: {}
-  securityContext: {}
+  securityContext:
+    fsGroup: 999
+    runAsUser: 999
   disableRunAsNonRoot: false
   disasterRecovery:
     siteManagerApiGroup: "qubership.org"
