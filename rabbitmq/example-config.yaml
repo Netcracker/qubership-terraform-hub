@@ -148,7 +148,7 @@ rabbitmq:
       cpu: 1
       memory: 2Gi
     storage: 1024Mi
-    #storageclass: "gp2"
+    storageclass: "default"
   ingress:
     enabled: false
     host: ""
