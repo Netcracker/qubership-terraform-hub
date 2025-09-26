@@ -15,3 +15,8 @@ backupDaemon.resources.requests.cpu: 50m
 backupDaemon.resources.requests.memory: 128Mi
 backupDaemon.resources.limits.cpu: 100m
 backupDaemon.resources.limits.memory: 256Mi
+custom_params:
+  rabbitmq_cluster_name: rabbitmq
+  rabbitmq_vm_memory_high_watermark: 80%
+  rabbitmq_default_user: admin
+  rabbitmq_default_password: admin
