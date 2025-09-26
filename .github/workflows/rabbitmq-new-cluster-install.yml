@@ -21,12 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
             repository: Netcracker/qubership-rabbitmq
-            path: operator
+            path: qubership-rabbitmq
 
       - name: Listing downloaded files
         run: |
           pwd
-          ls -R operator
+          ls -R qubership-rabbitmq
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -62,12 +62,11 @@ jobs:
       - name: Verify cluster access
         run: kubectl get nodes
 
-      - name: Terraform Init and Plan
+      - name: Helm install
         run: |
           pwd
+          ls ./qubership-rabbitmq/operator/charts/helm/rabbitmq/
           cd ./rabbitmq
-          terraform init
-#          echo  "Namespace to install Rabbit-MQ: ${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
-#          env
-#          terraform plan -var "RABBIT_INSTALL_NAMESPACE=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
-#          terraform apply -var "RABBIT_INSTALL_NAMESPACE=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}" -auto-approve
+          echo  "Namespace to install Rabbit-MQ: ${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}"
+          echo "Starting Helm install"
+          helm install --namespace=${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml rabbitmq-service ../qubership-rabbitmq/operator/charts/helm/rabbitmq/

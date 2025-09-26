@@ -1,0 +1,17 @@
+operator.resources.requests.cpu: 50m
+operator.resources.requests.memory: 128Mi
+operator.resources.limits.cpu: 100m
+operator.resources.limits.memory: 256Mi
+rabbitmq.replicas: 3
+rabbitmq.resources.requests.cpu: 300m
+rabbitmq.resources.requests.memory: 1Gi
+rabbitmq.resources.limits.cpu: 1
+rabbitmq.resources.limits.memory: 1Gi
+telegraf.resources.requests.cpu: 50m
+telegraf.resources.requests.memory: 128Mi
+telegraf.resources.limits.cpu: 200m
+telegraf.resources.limits.memory: 256Mi
+backupDaemon.resources.requests.cpu: 50m
+backupDaemon.resources.requests.memory: 128Mi
+backupDaemon.resources.limits.cpu: 100m
+backupDaemon.resources.limits.memory: 256Mi
