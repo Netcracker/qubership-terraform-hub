@@ -1,5 +1,5 @@
-name: Task
-description: Create a task
+name: Documentation
+description: Create a documentation task
 labels: [documentation]
 title: "[Documentation]: "
 projects: ["Netcracker/13"]
