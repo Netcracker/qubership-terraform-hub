@@ -1,0 +1,56 @@
+name: Task
+description: Create a task
+labels: [task]
+title: "[Task]: "
+projects: ["Netcracker/13"]
+type: Task
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: |
+        A clear and concise description of what the task is.
+      placeholder: |
+        <one sentence capability>
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: |
+        A clear and concise description of why the task is needed.
+      placeholder: |
+        <why this is needed (tech debt, speed, reliability)>
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Considerations
+      description: "Risks associated with the task."
+      placeholder: |
+        <regression risk, rollout plan>
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / Boundaries
+      description: "In scope/Out of scope"
+      placeholder: |
+        In scope: ...
+        Out of scope: ... (explicitly NOT changing behaviour)
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "Acceptance criteria for the task."
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: false
