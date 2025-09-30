@@ -33,6 +33,9 @@ resource "aws_instance" "test" {
   instance_type = "t3a.nano"
   key_name = "ec2_eks_id_rsa"
   #associate_public_ip_address = false
+  metadata_options {
+    http_tokens = "required"
+  }
 
   primary_network_interface {
     network_interface_id = aws_network_interface.github_runner_vpc.id
