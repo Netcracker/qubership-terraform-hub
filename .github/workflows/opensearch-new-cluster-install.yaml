@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout
 
       - name: Clone public qubership-opensearch repo
-        uses: actions/checkout@v4
+        uses: actions/checkout
         with:
           repository: Netcracker/qubership-
           path: qubership-opensearch
@@ -29,12 +29,12 @@ jobs:
           ls -R qubership-opensearch
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl
         with:
           version: 'v1.32.0'
 
       - name: Setup Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm
 
       - name: Verify tools
         run: |
@@ -43,7 +43,7 @@ jobs:
           aws --version
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
