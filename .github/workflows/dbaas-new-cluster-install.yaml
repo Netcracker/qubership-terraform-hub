@@ -1,4 +1,4 @@
-name: Install Opensearch
+name: Install DBaaS
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: "dev"
 
 jobs:
-  Install-Opensearch:
+  Install-DBaaS:
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
 
@@ -17,16 +17,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Clone public qubership-opensearch repo
+      - name: Clone public qubership-dbaas repo
         uses: actions/checkout@v4
         with:
-          repository: Netcracker/qubership-opensearch
-          path: qubership-opensearch
+          repository: Netcracker/qubership-dbaas
+          path: qubership-dbaas
 
       - name: Listing downloaded files
         run: |
           pwd
-          ls -R qubership-opensearch
+          ls -R qubership-dbaas
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
@@ -56,8 +56,8 @@ jobs:
       - name: Verify cluster access
         run: kubectl get nodes
 
-      - name: Install Opensearch
+      - name: Install DBaaS
         run: |
-          cd ./opensearch
-          echo  "Namespace to install: ${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }}" 
-          helm install --namespace=${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml opensearch ../qubership-opensearch/
+          cd ./dbaas
+          echo  "Namespace to install: ${{ vars.TF_VAR_DBAAS_INSTALL_NAMESPACE }}" 
+          helm install dbaas ./helm-templates/dbaas-aggregator --namespace=${{ vars.TF_VAR_DBAAS_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml
