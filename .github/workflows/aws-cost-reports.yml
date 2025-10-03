@@ -3,14 +3,11 @@ name: Scheduled AWS cost reports
 on:
   schedule:
     - cron: "0 5 2 * *"
-
   workflow_dispatch:
 
 jobs:
   aws-reporting:
-    #if: false #Disable job
     runs-on: ubuntu-latest
-    #environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout Code
@@ -19,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-            python-version: '3.9'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
@@ -48,11 +45,12 @@ jobs:
             ./aws-cost-reports/costs.xlsx
           retention-days: 30
 
-      - name: Get artifact download URL
-        id: artifact_url
+      - name: Get current date and report period
+        id: date
         run: |
-            ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
+          echo "current_date=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          echo "report_month=$(date -d 'last month' '+%B %Y')" >> $GITHUB_OUTPUT
+          echo "report_period=$(date -d 'last month' '+%Y-%m')" >> $GITHUB_OUTPUT
 
       - name: Send email notification
         uses: dawidd6/action-send-mail@v3
@@ -61,21 +59,25 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Cost Report Generated - ${{ github.repository }}"
+          subject: "AWS Cost Report for ${{ steps.date.outputs.report_month }} - ${{ github.repository }}"
           body: |
             Hello,
             
-            The monthly cost report has been successfully generated.
-          
+            The monthly AWS cost report has been successfully generated.
+            
             📊 REPORT DETAILS:
-              - Period: ${{ steps.datetime.outputs.report_month }}
-              - Generated: ${{ steps.datetime.outputs.current_datetime }}
-              - Repository: ${{ github.repository }}
+            - Period: ${{ steps.date.outputs.report_month }}
+            - Generated: ${{ steps.date.outputs.current_date }}
+            - Repository: ${{ github.repository }}
             
             📎 DOWNLOAD LINKS:
             Artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
+            Generated files:
+            • costs.csv (CSV format)
+            • costs.xlsx (Excel format)
+
             Best regards,
-            Cost Reporting System
+            AWS Cost Reporting System
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
-          from: "Cost Reporting System <${{ secrets.SMTP_USERNAME }}>"
+          from: "AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>"
