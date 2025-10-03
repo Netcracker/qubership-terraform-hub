@@ -39,3 +39,4 @@ terraform.rc
 # Report files ignore
 *.csv
 *.xls
+*.xlsx
