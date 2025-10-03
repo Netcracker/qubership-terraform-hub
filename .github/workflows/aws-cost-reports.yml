@@ -47,3 +47,9 @@ jobs:
             ./aws-cost-reports/costs.csv
             ./aws-cost-reports/costs.xlsx
           retention-days: 30
+
+      - name: Get artifact download URL
+        id: artifact
+        run: |
+            ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
