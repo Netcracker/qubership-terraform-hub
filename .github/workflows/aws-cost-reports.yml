@@ -5,12 +5,9 @@ on:
     - cron: "0 9 * * 1-5"
 
   workflow_dispatch:
-    inputs:
-      tf_command:
-        description: "Generate Cost report"
 
 jobs:
-  terraform:
+  aws-reporting:
     #if: false #Disable job
     runs-on: ubuntu-latest
     #environment: ${{ github.event.inputs.environment || 'dev' }}
