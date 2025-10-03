@@ -52,4 +52,4 @@ jobs:
         id: artifact
         run: |
             ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
+            echo "artifact_url = $ARTIFACT_URL" >> $GITHUB_OUTPUT
