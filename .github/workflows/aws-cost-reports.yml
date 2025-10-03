@@ -49,10 +49,10 @@ jobs:
           retention-days: 30
 
       - name: Get artifact download URL
-        id: artifact
+        id: artifact_url
         run: |
             ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "artifact_url = $ARTIFACT_URL" >> $GITHUB_OUTPUT
+            echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
 
       - name: Send email notification
         uses: dawidd6/action-send-mail@v3
@@ -66,17 +66,15 @@ jobs:
             Hello,
             
             The monthly cost report has been successfully generated.
+          
+            📊 REPORT DETAILS:
+              - Period: ${{ steps.datetime.outputs.report_month }}
+              - Generated: ${{ steps.datetime.outputs.current_datetime }}
+              - Repository: ${{ github.repository }}
             
-            You can download the reports from the GitHub Actions artifacts:
-            ${{ steps.artifact.outputs.artifact_url }}
-            
-            Generated files:
-            - costs.csv (CSV format)
-            - costs.xlsx (Excel format)
-            
-            Report period: Previous month
-            Generated at: ${{ github.run_created_at }}
-            
+            📎 DOWNLOAD LINKS:
+            Artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
             Best regards,
             Cost Reporting System
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
