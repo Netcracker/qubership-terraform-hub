@@ -64,7 +64,7 @@ def generate_reports(data, start_date, end_date):
 
         if 'Groups' in result:
             for group in result['Groups']:
-                tag_value = group['Keys'][0] if group['Keys'] else 'No tag key: cost-usage'
+                tag_value = group['Keys'][0] if group['Keys'] else 'without tag'
                 tag_values.add(tag_value)
 
                 if tag_value not in cost_data:
