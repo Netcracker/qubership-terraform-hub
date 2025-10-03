@@ -102,6 +102,8 @@ def generate_csv(tag_values, dates, cost_data):
 
             for date in dates:
                 cost = cost_data.get(tag, {}).get(date, "")
+                if cost:
+                    cost = f"{float(cost):.2f}"
                 row.append(cost)
                 try:
                     if cost:
@@ -109,7 +111,7 @@ def generate_csv(tag_values, dates, cost_data):
                 except ValueError:
                     pass
 
-            row.append(f"{tag_total:.10f}")
+            row.append(f"{tag_total:.2f}")
             writer.writerow(row)
             tag_totals[tag] = tag_total
 
@@ -126,10 +128,10 @@ def generate_csv(tag_values, dates, cost_data):
                         date_total += float(cost)
                 except ValueError:
                     pass
-            total_row.append(f"{date_total:.10f}" if date_total > 0 else "")
+            total_row.append(f"{date_total:.2f}" if date_total > 0 else "")
             grand_total += date_total
 
-        total_row.append(f"{grand_total:.10f}")
+        total_row.append(f"{grand_total:.2f}")
         writer.writerow(total_row)
 
     print(f"CSV report saved to: {filename}")
@@ -183,21 +185,19 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
         # Date data
         for col_idx, date in enumerate(dates, 2):
             cost = cost_data.get(tag, {}).get(date, "")
-            cell = ws.cell(row=row_idx, column=col_idx, value=cost if cost else 0)
+            if cost:
+                cost_value = float(cost)
+                cell = ws.cell(row=row_idx, column=col_idx, value=cost_value)
+                cell.number_format = '0.00'
+                tag_total += cost_value
+            else:
+                cell = ws.cell(row=row_idx, column=col_idx, value=0)
             cell.border = border
             cell.alignment = Alignment(horizontal='right', vertical='center')
 
-            if cost:
-                try:
-                    cell.value = float(cost)
-                    cell.number_format = '0.0000000000'
-                    tag_total += float(cost)
-                except ValueError:
-                    pass
-
         # Tag total
         total_cell = ws.cell(row=row_idx, column=len(dates)+2, value=tag_total)
-        total_cell.number_format = '0.0000000000'
+        total_cell.number_format = '0.00'
         total_cell.border = border
         total_cell.alignment = Alignment(horizontal='right', vertical='center')
 
@@ -222,7 +222,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
                 pass
 
         cell = ws.cell(row=total_row_idx, column=col_idx, value=date_total)
-        cell.number_format = '0.0000000000'
+        cell.number_format = '0.00'
         cell.font = total_font
         cell.fill = total_fill
         cell.border = border
@@ -232,7 +232,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
     # Grand total
     grand_total_cell = ws.cell(row=total_row_idx, column=len(dates)+2, value=grand_total)
-    grand_total_cell.number_format = '0.0000000000'
+    grand_total_cell.number_format = '0.00'
     grand_total_cell.font = total_font
     grand_total_cell.fill = total_fill
     grand_total_cell.border = border
