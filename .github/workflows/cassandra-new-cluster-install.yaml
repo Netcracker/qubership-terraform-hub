@@ -1,0 +1,25 @@
+name: Install Cassandra
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment Name"
+        required: false
+        default: "dev"
+
+jobs:
+  Install-Opensearch:
+    environment: "${{github.event.inputs.environment}}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Clone public Cassandra repo
+        uses: actions/checkout@v4
+        with:
+          repository: Netcracker/qubership-opensearch
+          path: qubership-opensearch
+
