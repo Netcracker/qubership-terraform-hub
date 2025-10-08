@@ -49,5 +49,6 @@ jobs:
           git clone https://github.com/k8ssandra/k8ssandra-operator
           helm dependency build k8ssandra-operator/charts/k8ssandra-operator/
           helm install k8ssandra-operator k8ssandra-operator/charts/k8ssandra-operator/ -n cassandra --create-namespace
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=k8ssandra-operator -n cassandra
           kubectl apply -f ./cassandra-cr.yaml -n cassandra
 
