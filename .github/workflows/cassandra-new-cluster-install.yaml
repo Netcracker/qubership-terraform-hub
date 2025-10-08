@@ -17,11 +17,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Clone public cert-manager repo
-        uses: actions/checkout@v4
-        with:
-          repository: git clone cert-manager/cert-manager
-          path: cert-manager
+#      - name: Clone public cert-manager repo
+#        uses: actions/checkout@v4
+#        with:
+#          repository: git clone cert-manager/cert-manager
+#          path: cert-manager
 
       - name: Install Cert-Manager
         run: |
