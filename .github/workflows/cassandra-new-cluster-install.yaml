@@ -17,9 +17,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Clone public Cassandra repo
+      - name: Clone public cert-manager repo
         uses: actions/checkout@v4
         with:
-          repository: Netcracker/qubership-opensearch
-          path: qubership-opensearch
-
+          repository: git clone https://github.com/cert-manager/cert-manager
+          path: cert-manager
