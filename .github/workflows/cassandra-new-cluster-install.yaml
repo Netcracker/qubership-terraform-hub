@@ -1,0 +1,30 @@
+name: Install Cassandra
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment Name"
+        required: false
+        default: "dev"
+
+jobs:
+  Install-Opensearch:
+    environment: "${{github.event.inputs.environment}}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Clone public cert-manager repo
+        uses: actions/checkout@v4
+        with:
+          repository: git clone https://github.com/cert-manager/cert-manager
+          path: cert-manager
+
+      - name: Install Cert-Manager
+        run: |
+           helm repo add jetstack https://charts.jetstack.io
+           helm repo update
+           helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set installCRDs=true
