@@ -31,6 +31,9 @@ on:
       rabbitmq-install:
         type: boolean
         default: false
+      cassandra-install:
+        type: boolean
+        default: false
 
 
 jobs:
@@ -289,5 +292,27 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'rabbitmq-new-cluster-install.yml',
+              ref: 'main'
+            })
+
+  cassandra-install:
+    needs: tf-post-install
+    environment: "${{github.event.inputs.environment}}"
+    if: github.event.inputs.cassandra-install == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        run: |
+          echo "tf-prepare: ${{ github.event.inputs.cassandra-install }}"
+          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+
+      - name: Trigger Cassandra install workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'cassandra-new-cluster-install.yml',
               ref: 'main'
             })
