@@ -1,0 +1,193 @@
+name: Deploy Self-Hosted Runner
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      instance_type:
+        description: 'EC2 instance type'
+        required: true
+        default: 't3.micro'
+        type: choice
+        options:
+          - t3.micro
+          - t3.small
+          - t3.medium
+      runner_labels:
+        description: 'Runner labels (comma-separated)'
+        required: true
+        default: 'self-hosted,linux,x64,terraform'
+      destroy_runner:
+        description: 'Destroy runner instead of creating'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy-runner:
+    name: Deploy GitHub Runner
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && !github.event.inputs.destroy_runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.3
+
+      - name: Generate temporary runner token
+        id: generate-token
+        run: |
+          # For repository-level runner
+          TOKEN=$(curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token \
+            | jq -r .token)
+          
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+          echo "::add-mask::$TOKEN"  # Mask token in logs
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./spawn-github-runner
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var="github_token=${{ steps.generate-token.outputs.token }}" \
+            -var="github_org=${{ github.repository_owner }}" \
+            -var="github_repo=${{ github.event.repository.name }}" \
+            -var="instance_type=${{ github.event.inputs.instance_type }}" \
+            -out=tfplan
+            
+        working-directory: ./spawn-github-runner
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./spawn-github-runner
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ../spawn-github-runner
+
+      - name: Get Runner Info
+        id: runner-info
+        run: |
+          INSTANCE_ID=$(terraform output -raw instance_id)
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          RUNNER_NAME=$(terraform output -raw runner_name)
+          
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "runner_name=$RUNNER_NAME" >> $GITHUB_OUTPUT
+        working-directory: ./spawn-github-runner
+
+      - name: Wait for runner registration
+        run: |
+          echo "Waiting for runner to register..."
+          sleep 60
+          
+          # Check if runner is online
+          RUNNER_NAME="${{ steps.runner-info.outputs.runner_name }}"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runners")
+          
+          ONLINE=$(echo "$RESPONSE" | jq -r ".runners[] | select(.name == \"$RUNNER_NAME\") | .status")
+          
+          if [ "$ONLINE" = "online" ]; then
+            echo "✅ Runner is online!"
+          else
+            echo "❌ Runner not online yet. Status: $ONLINE"
+            # Don't fail the workflow - runner might still be starting
+          fi
+
+      - name: Update deployment summary
+        run: |
+          echo "## 🚀 GitHub Runner Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Instance ID:** ${{ steps.runner-info.outputs.instance_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Public IP:** ${{ steps.runner-info.outputs.public_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Runner Name:** ${{ steps.runner-info.outputs.runner_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Labels:** ${{ github.event.inputs.runner_labels }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The runner should appear in your repository settings shortly."
+
+  destroy-runner:
+    name: Destroy GitHub Runner
+    runs-on: ubuntu-latest
+    if: github.event.inputs.destroy_runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./spawn-github-runner
+
+
+      - name: Terraform Destroy
+        run: |
+          terraform destroy -auto-approve \
+            -var="github_token=dummy-token" \
+            -var="github_org=${{ github.repository_owner }}" \
+            -var="github_repo=${{ github.event.repository.name }}"
+        working-directory: ./spawn-github-runner
+
+
+      - name: Update destruction summary
+        run: |
+          echo "## 🗑️ GitHub Runner Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Runner infrastructure has been successfully destroyed." >> $GITHUB_STEP_SUMMARY
+
+  cleanup-old-runners:
+    name: Cleanup Old Runners
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Check for offline runners
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: runners } = await github.rest.actions.listSelfHostedRunnersForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const offlineRunners = runners.runners.filter(runner => 
+              runner.status === 'offline' && 
+              runner.name.includes('github-runner-')
+            );
+            
+            for (const runner of offlineRunners) {
+              console.log(`Removing offline runner: ${runner.name}`);
+              await github.rest.actions.deleteSelfHostedRunnerFromRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                runner_id: runner.id,
+              });
+            }
+
+            core.setOutput('removed_count', offlineRunners.length);

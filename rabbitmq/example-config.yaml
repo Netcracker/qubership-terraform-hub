@@ -1,0 +1,402 @@
+## Default values for helm-chart.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+#
+
+# name: rabbitmq-service
+#
+operatorImage: ghcr.io/netcracker/qubership-rabbitmq-operator:main
+#
+# loglevel: INFO
+
+allowEvents: false
+
+global:
+  tls:
+    enabled: false
+    cipherSuites: []
+    allowNonencryptedAccess: true
+    generateCerts:
+      enabled: true
+      certProvider: cert-manager
+      durationDays: 365
+      clusterIssuerName: ""
+  podReadinessTimeout: 360
+  customLabels: {}
+  securityContext:
+    fsGroup: 999
+    runAsUser: 999
+  disableRunAsNonRoot: false
+  disasterRecovery:
+    siteManagerApiGroup: "qubership.org"
+
+operator:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  customLabels: {}
+  securityContext: {}
+  priorityClassName: ""
+  apiGroup: "qubership.org"
+  pullPolicy: "Always"
+  restartScheduler:
+    dockerImage: bitnami/kubectl:latest
+    enabled: true
+    schedule: "0 0 * * *"
+    affinity: {}
+    nodeSelector: {}
+    resources:
+      requests:
+        cpu: 15m
+        memory: 128Mi
+      limits:
+        cpu: 50m
+        memory: 128Mi
+    securityContext: {}
+    customLabels: {}
+
+# [dangerous param(read the docs) - uncomment on your own risk] operatorDeleteResources: True
+
+externalRabbitmq:
+  enabled: false
+  url: ""
+  username: ""
+  password: ""
+  replicas: 0
+  clusterName: ""
+  sslSecretName: ""
+  enableSsl: false
+
+disasterRecovery:
+  image: ghcr.io/netcracker/qubership-disaster-recovery-daemon:main
+  tls:
+    enabled: true
+    certificates:
+      crt: ""
+      key: ""
+      ca: ""
+    secretName: ""
+    cipherSuites: []
+    subjectAlternativeName:
+      additionalDnsNames: []
+      additionalIpAddresses: []
+  httpAuth:
+    enabled: false
+    smSecureAuth: false
+    smNamespace: "site-manager"
+    smServiceAccountName: ""
+    restrictedEnvironment: false
+    customAudience: "sm-services"
+  mode: ""
+  region: ""
+  noWait: false
+  siteManagerEnabled: true
+  afterServices: []
+  resources:
+    limits:
+      cpu: 32m
+      memory: 32Mi
+    requests:
+      cpu: 10m
+      memory: 10Mi
+
+##  rabbitmq params
+rabbitmq:
+  tls:
+    enabled: true
+    certificates:
+      crt: ""
+      key: ""
+      ca: ""
+    secretName: ""
+    cipherSuites: []
+    subjectAlternativeName:
+      additionalDnsNames: []
+      additionalIpAddresses: []
+  eventLogging: true
+  auto_reboot: false
+  hostpath_configuration: false
+  ipv6_enabled: false
+  ldap:
+    enabled: false
+    enableSsl: false
+    advancedConfig: "{rabbitmq_auth_backend_ldap, [{tag_queries, [{administrator, {constant, false}}, {management, {constant, true}}]}]}"
+  custom_params:
+    rabbitmq_cluster_name: rabbitmq
+    rabbitmq_vm_memory_high_watermark: 80%
+    rabbitmq_default_user: admin
+    rabbitmq_default_password: admin
+  #  volumes:
+  #    - rabbitmq-1
+  #    - rabbitmq-2
+  #    - rabbitmq-3
+  #  nodes:
+  #    - paas-infra311-master-1
+  #    - paas-infra311-master-2
+  #    - paas-infra311-master-3
+  replicas: 3
+  dockerImage: ghcr.io/netcracker/qubership-rabbitmq-image:main
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+    storage: 1024Mi
+    storageclass: "gp2"
+  ingress:
+    enabled: false
+    host: ""
+    className: ""
+  # The list of enabled plugins. For example,
+  # enabledPlugins:
+  #   - rabbitmq_shovel
+  #   - rabbitmq_federation
+  enabledPlugins: []
+  # Custom configuration properties for RabbitMQ (rabbitmq.conf). For example,
+  # customConfigProperties:
+  #   - log.file = true
+  #   - queue_master_locator = client-local
+  customConfigProperties: []
+  # Custom advanced configuration properties for RabbitMQ (advanced.config) in multi-line format. For example,
+  # customAdvancedProperties:
+  #   - |-
+  #     {lager,
+  #          [{handlers,
+  #              [{lager_console_backend,
+  #                  [{formatter_config,["[",date," ",time,"]",color,"[",severity,"] ",
+  #                          {pid,[]},
+  #                          " ",message,"\\n"]},
+  #                      {level,info}]}]}]
+  #          }
+  #   - |-
+  #     {rabbit,
+  #              [{log,
+  #                  [{file, [{file, false}]}] %% Disable RabbitMQ file handler
+  #              }]}
+  customAdvancedProperties: []
+  # Additional environment variables to be specified in RabbitMQ. For example,
+  # environmentVariables:
+  #   - RABBITMQ_PROPERTY_NAME=propertyValue
+  environmentVariables: []
+  customLabels: {}
+  customAnnotations: {}
+  affinity: {
+    "podAntiAffinity": {
+      "requiredDuringSchedulingIgnoredDuringExecution": [
+        {
+          "labelSelector": {
+            "matchExpressions": [
+              {
+                "key": "app",
+                "operator": "In",
+                "values": [
+                  "rmqlocal"
+                ]
+              }
+            ]
+          },
+          "topologyKey": "topology.kubernetes.io/hostname"
+        }
+      ]
+    }
+  }
+  selectors: {}
+  securityContext: {}
+  priorityClassName: ""
+  livenessProbe:
+    initialDelaySeconds: 10
+    timeoutSeconds: 15
+    periodSeconds: 30
+    successThreshold: 1
+    failureThreshold: 30
+  readinessProbe:
+    initialDelaySeconds: 10
+    timeoutSeconds: 15
+    periodSeconds: 10
+    successThreshold: 1
+    failureThreshold: 90
+  deleteStatefulSetOnForbiddenUpdate: true
+
+tests:
+  runTests: true
+  dockerImage: ghcr.io/netcracker/qubership-rabbitmq-integration-tests:main
+  statusWritingEnabled: true
+  isShortStatusMessage: true
+  runTestsOnly: false
+  timeout: 1800
+  requestTimeout: 60
+  tags: smoke
+  waitTestResultOnJob: false
+  rabbitIsManagedByOperator: true
+  rabbitmq_port: 15672
+  amqp_port: 5672
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 200m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+  customLabels: {}
+  securityContext: {}
+  priorityClassName: ""
+  affinity: {}
+  prometheusUrl: ""
+
+
+# Backup Daemon is a service to manage RabbitMQ snapshots.
+backupDaemon:
+  tls:
+    enabled: true
+    certificates:
+      crt: ""
+      key: ""
+      ca: ""
+    secretName: ""
+    subjectAlternativeName:
+      additionalDnsNames: []
+      additionalIpAddresses: []
+  # Enable Rabbitmq Backup Daemon installation.
+  enabled: false
+  image: ghcr.io/netcracker/qubership-rabbitmq-backup-daemon:main
+
+  # storage and storageClass are the settings for configuring stateful
+  # storage for the server pods. storage should be set to the disk size of
+  # the attached volume. storageClass is the class of storage which defaults
+  # to null (the Kube cluster will pick the default).
+  # If storageClass and persistentVolume are not specified the RabbitMQ Backup Daemon is deployed with emptyDir.
+  storage: 1Gi
+  storageClass: "null"
+
+  # The predefined Persistent Volume for the RabbitMQ Backup Daemon.
+  persistentVolume: "null"
+
+  # Specifies the cron-like backup schedule. If this parameter is empty,
+  # the default schedule "0 0 * * *" is used.
+  # The value `0 0 * * *` means that snapshots are created every day at midnight.
+  backupSchedule: "0 0 * * *"
+
+  #  Specifies the backup eviction policy. It is a comma-separated string of policies
+  #  written as `$start_time/$interval`. This policy splits all backups older than `$start_time` to numerous time intervals
+  #  `$interval` time long. Then it deletes all backups in every interval except the newest one. For example, `1d/7d` policy
+  #  means "take all backups older then one day, split them in groups by 7-days interval, and leave only the newest."
+  # If this parameter is empty, the default eviction policy "0/1d,7d/delete" is used.
+  evictionPolicy: "0/1d,7d/delete"
+
+  # Resource requests, limits, etc. for the server cluster placement. This
+  # should map directly to the value of the resources field for a PodSpec,
+  # formatted as a YAML string.
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "25m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  # Affinity Settings for Backup Daemon pod, formatted as a JSON string.
+  # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+  # Example:
+  # affinity: {
+  #   "nodeAffinity": {
+  #     "requiredDuringSchedulingIgnoredDuringExecution": {
+  #       "nodeSelectorTerms": [
+  #         {
+  #           "matchExpressions": [
+  #             {
+  #               "key": "node-role.kubernetes.io/master",
+  #               "operator": "DoesNotExist"
+  #             }
+  #           ]
+  #         }
+  #       ]
+  #     }
+  #   }
+  # }
+  affinity: {}
+
+  # Toleration Settings for Backup Daemon pod
+  # This should be a JSON string matching the Toleration array
+  # in a PodSpec.
+  # Example:
+  # tolerations: [
+  #   {
+  #     "operator": "Exists"
+  #   }
+  # ]
+  tolerations: []
+
+  # nodeSelector labels for syncCatalog pod assignment, formatted as a JSON string.
+  # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+  # Example:
+  # nodeSelector: {
+  #   "beta.kubernetes.io/arch": "amd64"
+  # }
+  nodeSelector: {}
+
+  # used to assign priority to backup daemon pod
+  # ref: https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/
+  priorityClassName: ""
+
+  s3:
+    enabled: false
+    sslVerify: true
+    sslSecretName: ""
+    sslCert: ""
+    url: ""
+    bucket: ""
+    keyId: ""
+    keySecret: ""
+
+  customLabels: {}
+
+  # Security context for backup daemon. For example
+  # securityContext:
+  #   runAsUser: 5000
+  securityContext: {}
+
+telegraf:
+  resources:
+    limits:
+      cpu: 150m
+      memory: 150Mi
+    requests:
+      cpu: 150m
+      memory: 150Mi
+  dockerImage: ghcr.io/netcracker/qubership-rabbitmq-monitoring:main
+  install: false
+  customLabels: {}
+  securityContext: {}
+  priorityClassName: ""
+  affinity: {}
+
+statusProvisioner:
+  enabled: true
+  dockerImage: ghcr.io/netcracker/qubership-deployment-status-provisioner:main
+  lifetimeAfterCompletion: 600
+  podReadinessTimeout: 300
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "50m"
+    limits:
+      memory: "100Mi"
+      cpu: "100m"
+  customLabels: {}
+  securityContext: {}
+
+# Cloud Release Integration
+# The name of the Service exposed for the database.
+SERVICE_NAME: "rabbitmq"
+# Microservice belonging to a group
+PART_OF: "rabbitmq"
+# Delimiter for labels
+DELIMITER: "-"
+# Artifact descriptor version which is installed.
+ARTIFACT_DESCRIPTOR_VERSION: ""  # TO_BE_REPLACED

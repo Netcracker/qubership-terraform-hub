@@ -23,7 +23,7 @@ Documentation for individual tool/script can be found in docs folder, contents a
 |-------------------|----------------------------------------------------------|-------------------------------------------------------|
 | Kubernetes        | Provision VPC, EKS Cluster and infrastructure components | [Kubernetes Installation](docs/kubernetes-install.md) |
 | EC2 Start         | Scheduled start of predefined EC2 instances              | [EC2 Start](docs/ec2-start.md)                        |
-| EC2 Stop          | Scheduled stop of predefined EC2 instances               | [EC2 Stop](docs/ec2-stop.md)                          |
+| EC2 Stop          | Scheduled stop of predefined EC2 instances               | [EC2 Stop](docs/ec2-start.md)                         |
 | EC2 Control       | Reusable workflow to on-demand start/stop EC2 Instance   | [EC2 Control](docs/ec2-control.md)                    |
 | Postgres Install  | Install Postgres to EKS Cluster                          | [Postgres](docs/postgres.md)                          |
 | Consul Install    | Install Consul to EKS Cluster                            | [Consul](docs/consul.md)                              |
@@ -56,8 +56,6 @@ Documentation for individual tool/script can be found in docs folder, contents a
    ```
 
    > **Note:** Consult the individual workflow docs for specific input parameters and examples.
-
-Need to contribute? Read the fork workflow: [Fork Sequence Guide](docs/fork-sequence.md).
 
 ---
 

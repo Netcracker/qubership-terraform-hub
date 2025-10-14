@@ -1,0 +1,12 @@
+#encryption not required
+AVD-AWS-0131
+#EKS Control Plane Logs disabled due to cost reduction
+AVD-AWS-0038
+#Public access required
+AVD-AWS-0040
+#Public access required
+AVD-AWS-0041
+#Public access required
+AVD-AWS-0104
+#VPC Logs disabled due to cost reduction
+AVD-AWS-0178
