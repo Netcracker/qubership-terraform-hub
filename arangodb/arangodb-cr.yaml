@@ -3,14 +3,70 @@ kind: "ArangoDeployment"
 metadata:
   name: arangodb-cluster
 spec:
-  mode: Single
+  # Cluster mode for multiple nodes
+  mode: Cluster
   image: arangodb/arangodb:3.11.5
-  single:
+
+  # Multi-arch support
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - arm64
+                - amd64
+
+  # Agents - cluster coordination (3 nodes for high availability)
+  agents:
+    count: 3
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  # DBServers - data storage and sharding (3 nodes for replication)
+  dbservers:
+    count: 3
     resources:
       requests:
         memory: "512Mi"
-        cpu: "250m"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    storage:
+      size: "5Gi"
+
+  # Coordinators - query processing and client connections (3 nodes for load balancing)
+  coordinators:
+    count: 3
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  # Tolerations for control-plane
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+  # Authentication
   authentication:
     jwtSecretName: None
+
+  # TLS
   tls:
     caSecretName: None
+
+  # Monitoring
+  metrics:
+    enabled: false
