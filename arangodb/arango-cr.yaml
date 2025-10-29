@@ -1,0 +1,16 @@
+apiVersion: "database.arangodb.com/v1"
+kind: "ArangoDeployment"
+metadata:
+  name: $CLUSTER_NAME
+spec:
+  mode: Single
+  image: arangodb/arangodb:3.11.5
+  single:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+  authentication:
+    jwtSecretName: None
+  tls:
+    caSecretName: None
