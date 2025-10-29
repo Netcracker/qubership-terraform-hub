@@ -1,7 +1,7 @@
 apiVersion: "database.arangodb.com/v1"
 kind: "ArangoDeployment"
 metadata:
-  name: $CLUSTER_NAME
+  name: arangodb-cluster
 spec:
   mode: Single
   image: arangodb/arangodb:3.11.5
