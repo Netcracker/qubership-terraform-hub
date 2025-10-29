@@ -9,7 +9,7 @@ on:
         default: "dev"
 
 jobs:
-  Install-Cassandra:
+  Install-ArangoDB:
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
 
