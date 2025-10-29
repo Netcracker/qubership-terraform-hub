@@ -1,0 +1,58 @@
+name: Install ArangoDB
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment Name"
+        required: false
+        default: "dev"
+
+jobs:
+  Install-Cassandra:
+    environment: "${{github.event.inputs.environment}}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+#      - name: Clone public cert-manager repo
+#        uses: actions/checkout@v4
+#        with:
+#          repository: git clone cert-manager/cert-manager
+#          path: cert-manager
+
+#      - name: Install Cert-Manager
+#        run: |
+#           helm repo add jetstack https://charts.jetstack.io
+#           helm repo update
+#           helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
+
+      - name: Install ArangoDB
+        run: |
+         cd ./arangodb
+#          git clone https://github.com/k8ssandra/k8ssandra-operator
+#          helm dependency build k8ssandra-operator/charts/k8ssandra-operator/
+#          helm install k8ssandra-operator k8ssandra-operator/charts/k8ssandra-operator/ -n cassandra --create-namespace
+#          kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=k8ssandra-operator -n cassandra
+#          kubectl apply -f ./cassandra-cr.yaml -n cassandra
+         kubectl create namespace arangodb    
+         helm repo add arangodb https://arangodb.github.io/kube-arangodb
+         helm repo update
+         helm install arangodb-operator arangodb/kube-arangodb --namespace arangodb --set operator.replicaCount=1
+         kubectl apply -n arangodb -f ./arangodb-cr.yaml
