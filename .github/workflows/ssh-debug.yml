@@ -72,7 +72,7 @@ jobs:
           GATEWAY_IP: ${{ github.event.inputs.gateway-ip }}
           GATEWAY_USER: root
           MAX_LIFE_TIME: 3600
-          PORT: ${{ github.event.inputs.port }}
+          PORT: 2222
         run: |
           echo "$GATEWAY_PRIVATE_KEY" > temp_key.pem
           chmod 400 temp_key.pem
@@ -94,7 +94,7 @@ jobs:
           tmux new-session -d -s debug
           
           # Start reverse SSH tunnel in background
-          ssh -o StrictHostKeyChecking=no -i temp_key.pem -R ${PORT}:localhost:${PORT} ${GATEWAY_USER}@${GATEWAY_IP} "sleep ${MAX_LIFE_TIME}" &
+          ssh -o StrictHostKeyChecking=no -i temp_key.pem -R 22:localhost:${PORT} ${GATEWAY_USER}@${GATEWAY_IP} "sleep ${MAX_LIFE_TIME}" &
           SSH_PID=$!
           
           # Wait for tmux session to be closed
