@@ -2,7 +2,7 @@ name: Bug report 🐛
 description: Create a report to help us improve
 labels: [bug]
 title: "[Bug]: "
-projects: ["Netcracker/13"]
+projects: ["Netcracker/22"]
 type: bug 🐛
 body:
   - type: textarea
