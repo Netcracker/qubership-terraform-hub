@@ -62,7 +62,7 @@ jobs:
         id: how-to-connect
         env:
           PORT: ${{ github.event.inputs.port }}
-        run: echo "from gateway server run: ssh -p ${PORT} $(whoami)@localhost"
+        run: echo "from gateway server run ssh -p ${PORT} $(whoami)@localhost"
 
       - name: Open reverse ssh
         shell: bash
