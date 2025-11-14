@@ -2,7 +2,7 @@ name: Feature request ✨
 description: Suggest an idea for this project
 labels: [enhancement, feature]
 title: "[Feature]: "
-projects: ["Netcracker/13"]
+projects: ["Netcracker/22"]
 type: Feature ✨
 body:
   - type: textarea
