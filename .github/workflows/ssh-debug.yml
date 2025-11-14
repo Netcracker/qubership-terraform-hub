@@ -78,12 +78,14 @@ jobs:
           chmod 400 temp_key.pem
           
           # Create unblock script
-          echo "#!/bin/bash" | sudo tee /usr/local/bin/unblock
-          echo "tmux kill-session" | sudo tee -a /usr/local/bin/unblock
+          sudo tee /usr/local/bin/unblock > /dev/null << 'EOF'
+          #!/bin/bash
+          tmux kill-session
+          EOF
           sudo chmod +x /usr/local/bin/unblock
           
           # Create motd
-          cat << EOF | sudo tee /etc/motd
+          sudo tee /etc/motd > /dev/null << 'EOF'
           A tmux session is running in the background, you can attach with 
           "tmux attach". To stop this host, run "unblock" or "tmux kill-session".
           EOF
