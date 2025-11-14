@@ -94,7 +94,7 @@ jobs:
           tmux new-session -d -s debug
           
           # Start reverse SSH tunnel in background
-          ssh -o StrictHostKeyChecking=no -i temp_key.pem -R 22:localhost:${PORT} ${GATEWAY_USER}@${GATEWAY_IP} "sleep ${MAX_LIFE_TIME}" &
+          ssh -o StrictHostKeyChecking=no -i temp_key.pem -R 2222:localhost:2222 ${GATEWAY_USER}@${GATEWAY_IP} -p 2222 "sleep ${MAX_LIFE_TIME}" &
           SSH_PID=$!
           
           # Wait for tmux session to be closed
