@@ -15,41 +15,74 @@ on:
         default: "22"
 
 jobs:
-  ssh-connect-and-wait:
+  debug-runner-via-ssh
     runs-on: ubuntu-latest
-    timeout-minutes: 1440  # 24 hours
-    
+
     steps:
-    - name: Setup SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ github.event.inputs.public-key }}" > ~/.ssh/authorized_keys
-        echo "${{ secrets.RUNNER_DEBUG_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/authorized_keys
-        chmod 700 ~/.ssh
-        
-    - name: Install SSH client
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y openssh-client
-        
-    - name: Wait for SSH connection and keep alive
-      run: |
-        echo "Starting SSH connection to ${{ github.event.inputs.gateway-ip }}:${{ github.event.inputs.port }}"
-        echo "This session will remain active for debugging purposes"
-        echo "To exit, stop the workflow in GitHub Actions"
-        pwd
-        cat ~/.ssh/id_rsa
-        cat ~/.ssh/authorized_keys
-        
-        
-        # Start SSH connection with keep-alive
-        ssh -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ServerAliveInterval=60 \
-            -o ServerAliveCountMax=1000 \
-            -i ~/.ssh/id_rsa \
-            -p ${{ github.event.inputs.port }} \
-            root@${{ github.event.inputs.gateway-ip }} \
-            "echo 'SSH connection established. Session will remain active.'; sleep 86400"
+      - name: Install requirements
+        shell: bash
+        id: download
+        run: |            
+            sudo apt update -qqqy
+            sudo apt install -qqqy openssh-server tmux
+      - name: Setup SSHD
+        shell: bash
+        id: setup
+        env:
+          GATEWAY_IP: ${{ github.event.inputs.gateway-ip }}
+          PORT: ${{ github.event.inputs.port }}
+        run: |
+          sudo systemctl enable ssh
+          sudo ufw allow from ${GATEWAY_IP}
+          sudo ufw enable
+          if [ -z "$(find /etc/ssh/ -name "ssh_host_*"|xargs echo -n)" ]; then DEBIAN_FRONTEND=noninteractive sudo -E dpkg-reconfigure openssh-server ;  fi
+          echo "PasswordAuthentication no" | sudo tee -a /etc/ssh/sshd_config
+          echo "ChallengeResponseAuthentication no" | sudo tee -a /etc/ssh/sshd_config
+          sudo sed -i "s/.*PasswordAuthentication.*/PasswordAuthentication no/g" /etc/ssh/sshd_config
+          sudo sed -i "s/.*Port.*/Port ${PORT}/g" /etc/ssh/sshd_config
+          sudo systemctl daemon-reload
+          sudo systemctl restart ssh --now
+      - name: Install authorized key
+        shell: bash
+        id: keys
+        env:
+          SSH_PUBLIC_KEY: ${{ github.event.inputs.sshPublicKey }}
+        run: |
+          mkdir -p ~/.ssh
+          echo ${SSH_PUBLIC_KEY} > ~/.ssh/authorized_keys
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/authorized_keys
+      - name: How to connect
+        shell: bash
+        id: how-to-connect
+        env:
+          PORT: ${{ github.event.inputs.port }}
+        run: echo from gateway server run- ssh -p ${PORT} $(whoami)@localhost          
+      - name: Open reverse ssh
+        shell: bash
+        id: reverse-ssh
+        env:
+          GATEWAY_PRIVATE_KEY: ${{ secrets.RUNNER_DEBUG_SSH_PRIVATE_KEY }}
+          GATEWAY_IP: ${{ github.event.inputs.gateway-ip }}
+          GATEWAY_USER: root
+          MAX_LIFE_TIME: 3600
+          PORT: ${{ github.event.inputs.port }}
+        run: |
+          echo "$GATEWAY_PRIVATE_KEY" > temp_key.pem
+          sudo chmod 400 temp_key.pem
+          ssh -o StrictHostKeyChecking=no -i temp_key.pem -R ${PORT}:localhost:${PORT} ${GATEWAY_USER}@${GATEWAY_IP} "sleep ${MAX_LIFE_TIME}" && rm -f temp_key.pem && tmux kill-session &
+    
+          echo "#!/bin/bash" | sudo tee -a /usr/local/bin/unblock
+          echo "tmux kill-session" | sudo tee -a /usr/local/bin/unblock
+          
+          sudo chmod +x /usr/local/bin/unblock
+          
+          cat << EOF | sudo tee /etc/motd
+          A tmux session is running in the background, you can attach with 
+          "tmux attach". To stop this host, run "unblock" or "tmux kill-session".
+          EOF
+    
+          tmux new-session -d -s debug
+          
+          # Blocks until someone has attached to the session and closed it
+          tmux wait-for channel
