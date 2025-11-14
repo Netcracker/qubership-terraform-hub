@@ -2,7 +2,7 @@ name: Documentation 📚
 description: Create a documentation task
 labels: [documentation]
 title: "[Documentation]: "
-projects: ["Netcracker/13"]
+projects: ["Netcracker/22"]
 type: documentation 📚
 body:
   - type: textarea
