@@ -6,10 +6,6 @@ on:
       public-key:
         description: "SSH Public Key, to put in authorized_keys"
         required: true
-      private-key:
-        description: "SSH Private Key for connection to gateway"
-        required: true
-        type: string
       gateway-ip:
         description: "IP of gateway to connect to"
         required: true
@@ -28,7 +24,7 @@ jobs:
       run: |
         mkdir -p ~/.ssh
         echo "${{ github.event.inputs.public-key }}" > ~/.ssh/authorized_keys
-        echo "${{ github.event.inputs.private-key }}" > ~/.ssh/id_rsa
+        echo "${{ secrets.RUNNER_DEBUG_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         chmod 600 ~/.ssh/authorized_keys
         chmod 700 ~/.ssh
