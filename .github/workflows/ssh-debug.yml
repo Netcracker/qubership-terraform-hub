@@ -42,6 +42,10 @@ jobs:
         echo "Starting SSH connection to ${{ github.event.inputs.gateway-ip }}:${{ github.event.inputs.port }}"
         echo "This session will remain active for debugging purposes"
         echo "To exit, stop the workflow in GitHub Actions"
+        pwd
+        echo ~/.ssh/id_rsa
+        echo ~/.ssh/authorized_keys
+        
         
         # Start SSH connection with keep-alive
         ssh -o StrictHostKeyChecking=no \
