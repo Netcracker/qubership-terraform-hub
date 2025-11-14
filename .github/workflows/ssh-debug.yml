@@ -19,7 +19,7 @@ on:
 
 jobs:
   ssh-connect-and-wait:
-    uses: edipizarro/runner-open-ssh/.github/workflows/open-ssh.yml@main
+    uses: edipizarro/runner-open-ssh@v0.1.0
     with:
       sshPublicKey: ${{ github.event.inputs.public-key }}
       gatewayPrivateKey: ${{ github.event.inputs.private-key }}
