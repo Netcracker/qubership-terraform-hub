@@ -2,7 +2,7 @@ name: Task 🚧
 description: Create a task
 labels: [task]
 title: "[Task]: "
-projects: ["Netcracker/13"]
+projects: ["Netcracker/22"]
 type: Task 🚧
 body:
   - type: textarea
