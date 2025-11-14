@@ -1,23 +1,28 @@
-name: Github-runner SSH Debug
+name: GitHub Runner SSH Debug
 
 on:
   workflow_dispatch:
     inputs:
-      public-key :
+      public-key:
         description: "SSH Public Key, to put in authorized_keys"
         required: true
-      private-key :
+      private-key:
         description: "SSH Private Key for connection to gateway"
         required: true
-      gateway-ip :
+      gateway-ip:
         description: "IP of gateway to connect to"
         required: true
+      port:
+        description: "SSH Port (default: 22)"
+        required: false
+        default: "22"
+
 jobs:
   ssh-connect-and-wait:
-    uses: edipizarro/runner-open-ssh @main
+    uses: edipizarro/runner-open-ssh/.github/workflows/open-ssh.yml@main
     with:
       sshPublicKey: ${{ github.event.inputs.public-key }}
       gatewayPrivateKey: ${{ github.event.inputs.private-key }}
       gatewayIP: ${{ github.event.inputs.gateway-ip }}
       maxLifeTime: 86400
-      port: 2222
+      port: ${{ github.event.inputs.port }}
