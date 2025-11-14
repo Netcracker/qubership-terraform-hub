@@ -9,6 +9,7 @@ on:
       private-key:
         description: "SSH Private Key for connection to gateway"
         required: true
+        type: string
       gateway-ip:
         description: "IP of gateway to connect to"
         required: true
