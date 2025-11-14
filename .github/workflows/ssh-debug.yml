@@ -19,10 +19,36 @@ on:
 
 jobs:
   ssh-connect-and-wait:
-    uses: edipizarro/runner-open-ssh@v0.1.0
-    with:
-      sshPublicKey: ${{ github.event.inputs.public-key }}
-      gatewayPrivateKey: ${{ github.event.inputs.private-key }}
-      gatewayIP: ${{ github.event.inputs.gateway-ip }}
-      maxLifeTime: 86400
-      port: ${{ github.event.inputs.port }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440  # 24 hours
+    
+    steps:
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ github.event.inputs.public-key }}" > ~/.ssh/authorized_keys
+        echo "${{ github.event.inputs.private-key }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/authorized_keys
+        chmod 700 ~/.ssh
+        
+    - name: Install SSH client
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openssh-client
+        
+    - name: Wait for SSH connection and keep alive
+      run: |
+        echo "Starting SSH connection to ${{ github.event.inputs.gateway-ip }}:${{ github.event.inputs.port }}"
+        echo "This session will remain active for debugging purposes"
+        echo "To exit, stop the workflow in GitHub Actions"
+        
+        # Start SSH connection with keep-alive
+        ssh -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=1000 \
+            -i ~/.ssh/id_rsa \
+            -p ${{ github.event.inputs.port }} \
+            root@${{ github.event.inputs.gateway-ip }} \
+            "echo 'SSH connection established. Session will remain active.'; sleep 86400"
