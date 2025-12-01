@@ -24,14 +24,10 @@ jobs:
       - name: List S3 directories for today
         id: list-s3
         run: |
+
           BUCKET_NAME="${{ vars.QSTP_S3_BUCKET_NAME }}"
-          TODAY="${{ steps.date.outputs.TODAY }}"
-          
           echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
           
-          # Используем AWS CLI для получения списка объектов/префиксов
-          # --delimiter "/" группирует по каталогам
-          # --prefix фильтрует по текущей дате
           SUBDIRS=$(aws s3api list-objects-v2 \
             --bucket "$BUCKET_NAME" \
             --prefix "$TODAY/" \
@@ -46,7 +42,6 @@ jobs:
             echo "Found subdirectories:"
             echo "$SUBDIRS" | tr '\t' '\n'
           
-            # Сохраняем список для использования в следующих шагах
             SUBDIRS_JSON=$(echo "$SUBDIRS" | tr '\t' '\n' | jq -R -s -c 'split("\n") | map(select(. != ""))')
             echo "subdirs_list=$SUBDIRS_JSON" >> $GITHUB_OUTPUT
           fi
