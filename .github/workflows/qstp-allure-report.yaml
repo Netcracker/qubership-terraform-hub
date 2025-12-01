@@ -27,14 +27,14 @@ jobs:
           BUCKET_NAME="${{ vars.QSTP_S3_BUCKET_NAME }}"
           TODAY="${{ steps.date.outputs.TODAY }}"
           echo "${{ steps.date.outputs.TODAY }}"
-          echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
+          echo "Looking for subdirectories in: s3://$BUCKET_NAME/Result/consul/$TODAY/"
           
           echo "Listing all S3 buckets:"
           aws s3 ls
                     
           SUBDIRS=$(aws s3api list-objects-v2 \
             --bucket "$BUCKET_NAME" \
-            --prefix "$TODAY/" \
+            --prefix "Result/consul/$TODAY/" \
             --delimiter "/" \
             --query "CommonPrefixes[].Prefix" \
             --output text 2>/dev/null || echo "")
