@@ -24,7 +24,7 @@ jobs:
       - name: List S3 directories for today
         id: list-s3
         run: |
-          BUCKET_NAME="${{ variable.QSTP_S3_BUCKET_NAME }}"
+          BUCKET_NAME="${{ vars.QSTP_S3_BUCKET_NAME }}"
           TODAY="${{ steps.date.outputs.TODAY }}"
           
           echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
