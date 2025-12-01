@@ -29,6 +29,9 @@ jobs:
           echo "${{ steps.date.outputs.TODAY }}"
           echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
           
+          echo "Listing all S3 buckets:"
+          aws s3 ls
+                    
           SUBDIRS=$(aws s3api list-objects-v2 \
             --bucket "$BUCKET_NAME" \
             --prefix "$TODAY/" \
