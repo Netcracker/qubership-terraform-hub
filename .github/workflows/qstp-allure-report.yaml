@@ -42,7 +42,7 @@ jobs:
           else
             echo "Found subdirectories:"
             echo "$SUBDIRS" | tr '\t' '\n'
-          
+            echo "$SUBDIRS"
             SUBDIRS_JSON=$(echo "$SUBDIRS" | tr '\t' '\n' | jq -R -s -c 'split("\n") | map(select(. != ""))')
             echo "subdirs_list=$SUBDIRS_JSON" >> $GITHUB_OUTPUT
           fi
