@@ -1,0 +1,66 @@
+name: List S3 Subdirectories
+
+on:
+  workflow_dispatch:
+  #schedule:
+  #  - cron: '0 0 * * *'
+
+jobs:
+  list-s3-subdirectories:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Generate current date
+        id: date
+        run: echo "TODAY=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: List S3 directories for today
+        id: list-s3
+        run: |
+          BUCKET_NAME="${{ variable.QSTP_S3_BUCKET_NAME }}"
+          TODAY="${{ steps.date.outputs.TODAY }}"
+          
+          echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
+          
+          # Используем AWS CLI для получения списка объектов/префиксов
+          # --delimiter "/" группирует по каталогам
+          # --prefix фильтрует по текущей дате
+          SUBDIRS=$(aws s3api list-objects-v2 \
+            --bucket "$BUCKET_NAME" \
+            --prefix "$TODAY/" \
+            --delimiter "/" \
+            --query "CommonPrefixes[].Prefix" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$SUBDIRS" ]; then
+            echo "No subdirectories found for date: $TODAY"
+            echo "subdirs_list=" >> $GITHUB_OUTPUT
+          else
+            echo "Found subdirectories:"
+            echo "$SUBDIRS" | tr '\t' '\n'
+          
+            # Сохраняем список для использования в следующих шагах
+            SUBDIRS_JSON=$(echo "$SUBDIRS" | tr '\t' '\n' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "subdirs_list=$SUBDIRS_JSON" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display results
+        run: |
+          echo "=== Summary ==="
+          echo "Date: ${{ steps.date.outputs.TODAY }}"
+          echo "Bucket: ${{ secrets.S3_BUCKET_NAME }}"
+          echo "Subdirectories:"
+          
+          SUBDIRS="${{ steps.list-s3.outputs.subdirs_list }}"
+          if [ -z "$SUBDIRS" ] || [ "$SUBDIRS" = "null" ]; then
+            echo "No subdirectories found"
+          else
+            echo "$SUBDIRS" | jq -r '.[]'
+          fi
