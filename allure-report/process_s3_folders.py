@@ -13,124 +13,156 @@ import sys
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def login_to_allure(allure_url, username, password):
-    """Login to Allure API and get token"""
-    try:
-        url = f"{allure_url}/login"
-        headers = {
-            'accept': '*/*',
-            'Content-Type': 'application/json'
-        }
-        data = {
-            'username': username,
-            'password': password
-        }
+class AllureAPIClient:
+    def __init__(self, base_url, username, password):
+        self.base_url = base_url
+        self.username = username
+        self.password = password
+        self.session = requests.Session()
+        self.session.verify = False  # Disable SSL verification
+        self.token = None
+        self.csrf_token = None
 
-        print(f"  Logging in to Allure API (SSL verification disabled)...")
-        response = requests.post(url, headers=headers, json=data, timeout=30, verify=False)
-        response.raise_for_status()
-
-        # Try to extract token from response
+    def login(self):
+        """Login to Allure API and get token"""
         try:
+            url = f"{self.base_url}/login"
+            headers = {
+                'accept': '*/*',
+                'Content-Type': 'application/json'
+            }
+            data = {
+                'username': self.username,
+                'password': self.password
+            }
+
+            print(f"  Logging in to Allure API...")
+            print(f"  URL: {url}")
+
+            response = self.session.post(url, headers=headers, json=data, timeout=30)
+
+            print(f"  Response status: {response.status_code}")
+            response.raise_for_status()
+
+            # Parse JSON response
             response_data = response.json()
-            # Try common token field names
-            token = response_data.get('token') or \
-                    response_data.get('access_token') or \
-                    response_data.get('auth_token')
+            print(f"  ✓ Login successful: {response_data.get('meta_data', {}).get('message', 'No message')}")
 
-            # Also check for Authorization header
-            if not token:
-                auth_header = response.headers.get('Authorization')
-                if auth_header and auth_header.startswith('Bearer '):
-                    token = auth_header[7:]
+            # Extract access_token from data.access_token
+            self.token = response_data.get('data', {}).get('access_token')
 
-            if not token:
-                print(f"  ✗ No token found in response")
-                print(f"  Response status: {response.status_code}")
-                print(f"  Response headers: {dict(response.headers)}")
-                print(f"  Response body: {response.text[:500]}...")
-                return None
+            if not self.token:
+                print(f"  ✗ No access_token found in response")
+                return False
 
-            print(f"  ✓ Successfully logged in, token obtained")
-            return token
+            # Extract CSRF token from cookies
+            cookies = response.cookies
+            self.csrf_token = cookies.get('csrf_access_token')
 
-        except json.JSONDecodeError:
-            # Maybe token is in headers or response is not JSON
-            auth_header = response.headers.get('Authorization')
-            if auth_header and auth_header.startswith('Bearer '):
-                token = auth_header[7:]
-                print(f"  ✓ Successfully logged in (token from headers)")
-                return token
-            else:
-                print(f"  ✗ No valid token found")
-                print(f"  Response status: {response.status_code}")
-                print(f"  Response text: {response.text[:500]}...")
-                return None
+            print(f"  ✓ Token obtained, length: {len(self.token)}")
+            print(f"  Token preview: {self.token[:50]}...")
+            print(f"  Token expires in: {response_data['data'].get('expires_in', 'unknown')} seconds")
+            if self.csrf_token:
+                print(f"  CSRF token: {self.csrf_token[:20]}...")
 
-    except requests.exceptions.RequestException as e:
-        print(f"  ✗ Login failed: {str(e)}")
-        return None
+            # Update session headers with token
+            self.session.headers.update({
+                'Authorization': f'Bearer {self.token}',
+                'X-CSRF-TOKEN': self.csrf_token if self.csrf_token else ''
+            })
 
-def generate_report(allure_url, token, project_id):
-    """Generate Allure report"""
-    try:
-        url = f"{allure_url}/generate-report"
-        params = {'project_id': project_id}
-        headers = {
-            'accept': '*/*',
-            'Authorization': f'Bearer {token}'
-        }
+            return True
 
-        print(f"  Generating report for project: {project_id}...")
-        response = requests.get(url, headers=headers, params=params, timeout=60, verify=False)
-        response.raise_for_status()
+        except json.JSONDecodeError as e:
+            print(f"  ✗ Invalid JSON response: {str(e)}")
+            print(f"  Response text: {response.text[:200]}")
+            return False
+        except requests.exceptions.RequestException as e:
+            print(f"  ✗ Login request failed: {str(e)}")
+            return False
+        except Exception as e:
+            print(f"  ✗ Unexpected error during login: {str(e)}")
+            return False
 
-        print(f"  ✓ Report generation triggered successfully")
-        print(f"  Response: {response.status_code} - {response.text[:200]}")
-        return True
+    def generate_report(self, project_id):
+        """Generate Allure report"""
+        try:
+            url = f"{self.base_url}/generate-report"
+            params = {'project_id': project_id}
 
-    except requests.exceptions.RequestException as e:
-        print(f"  ✗ Report generation failed: {str(e)}")
-        if hasattr(e, 'response') and e.response:
-            print(f"  Response: {e.response.status_code} - {e.response.text[:200]}")
-        return False
+            print(f"  Generating report for project: {project_id}...")
+            print(f"  URL: {url}")
 
-def download_report(allure_url, token, project_id, output_path):
-    """Download generated Allure report"""
-    try:
-        url = f"{allure_url}/report/export"
-        params = {'project_id': project_id}
-        headers = {
-            'accept': '*/*',
-            'Authorization': f'Bearer {token}'
-        }
+            response = self.session.get(url, params=params, timeout=60)
 
-        print(f"  Downloading report...")
-        response = requests.get(url, headers=headers, params=params, stream=True, timeout=120, verify=False)
-        response.raise_for_status()
+            print(f"  Response status: {response.status_code}")
+            print(f"  Response headers: {dict(response.headers)}")
 
-        # Check if response is actually a file
-        content_type = response.headers.get('Content-Type', '')
-        content_length = response.headers.get('Content-Length', 'unknown')
+            response.raise_for_status()
 
-        print(f"  Content-Type: {content_type}")
-        print(f"  Content-Length: {content_length}")
+            print(f"  ✓ Report generation triggered successfully")
 
-        # Save the report
-        with open(output_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+            # Try to parse response
+            try:
+                response_data = response.json()
+                print(f"  Response JSON: {response_data}")
+            except:
+                print(f"  Response text: {response.text[:200]}")
 
-        file_size = os.path.getsize(output_path)
-        print(f"  ✓ Report downloaded to {output_path} ({file_size} bytes)")
-        return True
+            return True
 
-    except requests.exceptions.RequestException as e:
-        print(f"  ✗ Report download failed: {str(e)}")
-        if hasattr(e, 'response') and e.response:
-            print(f"  Response status: {e.response.status_code}")
-            print(f"  Response headers: {dict(e.response.headers)}")
-        return False
+        except requests.exceptions.RequestException as e:
+            print(f"  ✗ Report generation failed: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                print(f"  Response status: {e.response.status_code}")
+                print(f"  Response text: {e.response.text[:200]}")
+            return False
+
+    def download_report(self, project_id, output_path):
+        """Download generated Allure report"""
+        try:
+            url = f"{self.base_url}/report/export"
+            params = {'project_id': project_id}
+
+            print(f"  Downloading report...")
+            print(f"  URL: {url}")
+
+            response = self.session.get(url, params=params, stream=True, timeout=120)
+
+            print(f"  Response status: {response.status_code}")
+            print(f"  Response headers: {dict(response.headers)}")
+
+            response.raise_for_status()
+
+            # Check if response is actually a file
+            content_type = response.headers.get('Content-Type', '')
+            content_length = response.headers.get('Content-Length', 'unknown')
+
+            print(f"  Content-Type: {content_type}")
+            print(f"  Content-Length: {content_length}")
+
+            # Save the report
+            with open(output_path, 'wb') as f:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if content_length != 'unknown' and int(content_length) > 0:
+                            percent = (downloaded / int(content_length)) * 100
+                            print(f"  Download progress: {downloaded}/{content_length} bytes ({percent:.1f}%)", end='\r')
+
+            print(f"\n  ✓ Report downloaded successfully")
+            file_size = os.path.getsize(output_path)
+            print(f"  Saved to: {output_path} ({file_size} bytes)")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            print(f"  ✗ Report download failed: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                print(f"  Response status: {e.response.status_code}")
+                print(f"  Response headers: {dict(e.response.headers)}")
+            return False
 
 def main():
     # Get environment variables
@@ -255,13 +287,15 @@ def main():
                     if files_copied > 0:
                         print(f"  Starting API calls...")
 
+                        # Initialize Allure API client
+                        allure_client = AllureAPIClient(allure_url, allure_username, allure_password)
+
                         # Login to get token
-                        token = login_to_allure(allure_url, allure_username, allure_password)
-                        if not token:
+                        if not allure_client.login():
                             print(f"  ✗ Skipping API calls due to login failure")
                         else:
                             # Generate report
-                            if generate_report(allure_url, token, project_id):
+                            if allure_client.generate_report(project_id):
                                 # Wait 1 minute
                                 print(f"  Waiting 60 seconds for report generation...")
                                 for i in range(60, 0, -1):
@@ -273,7 +307,7 @@ def main():
                                 report_filename = f"allure_report_{folder_name}_{timestamp}.zip"
                                 report_path = os.path.join(temp_dir, report_filename)
 
-                                if download_report(allure_url, token, project_id, report_path):
+                                if allure_client.download_report(project_id, report_path):
                                     report_files.append(report_path)
                                     print(f"  ✓ Report saved: {report_path}")
 
