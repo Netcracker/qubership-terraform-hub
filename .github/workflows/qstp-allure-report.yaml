@@ -1,8 +1,10 @@
-name: Upload Allure Results (Python Script)
+name: Process and Upload Allure Results
 
 on:
   schedule:
+    # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
+  # Also allow manual trigger
   workflow_dispatch:
     inputs:
       target_date:
@@ -24,9 +26,9 @@ env:
   AWS_REGION: 'us-east-1'
 
 jobs:
-  process-and-upload:
+  process-folders:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -43,10 +45,22 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run processing script
+      - name: Install boto3
+        run: pip install boto3
+
+      - name: Run folder processing script
         env:
           TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
           SOURCE_BUCKET: ${{ github.event.inputs.source_bucket || env.SOURCE_BUCKET }}
           DEST_BUCKET: ${{ github.event.inputs.destination_bucket || env.DESTINATION_BUCKET }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           python allure-report/process_s3_folders.py
+
+      - name: Upload processing log
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: processing-log
+          path: ${{ github.workspace }}/processing.log
+          retention-days: 7
