@@ -38,10 +38,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+      - name: List S3 directories for today
+        id: list-s3
+        run: |
+
+          BUCKET_NAME="${{ vars.QSTP_S3_BUCKET_NAME }}"
+          echo "Looking for subdirectories in: s3://$BUCKET_NAME/$TODAY/"
+          
+          SUBDIRS=$(aws s3api list-objects-v2 \
+            --bucket "$BUCKET_NAME" \
+            --prefix "$TODAY/" \
+            --delimiter "/" \
+            --query "CommonPrefixes[].Prefix" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$SUBDIRS" ]; then
+            echo "No subdirectories found for date: $TODAY"
+            echo "subdirs_list=" >> $GITHUB_OUTPUT
+          else
+            echo "Found subdirectories:"
+            echo "$SUBDIRS" | tr '\t' '\n'
+          
+            SUBDIRS_JSON=$(echo "$SUBDIRS" | tr '\t' '\n' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "subdirs_list=$SUBDIRS_JSON" >> $GITHUB_OUTPUT
+          fi
 
       - name: Run processing script
         env:
