@@ -1,65 +1,52 @@
-name: List S3 Subdirectories
+name: Upload Allure Results (Python Script)
 
 on:
+  schedule:
+    - cron: '0 2 * * *'
   workflow_dispatch:
-  #schedule:
-  #  - cron: '0 0 * * *'
+    inputs:
+      target_date:
+        description: 'Target date (YYYY-MM-DD)'
+        required: false
+        default: ''
+      source_bucket:
+        description: 'Source S3 bucket'
+        required: false
+        default: 'consul-test'
+      destination_bucket:
+        description: 'Destination S3 bucket'
+        required: false
+        default: 'qstp-consul-allure'
+
+env:
+  SOURCE_BUCKET: 'consul-test'
+  DESTINATION_BUCKET: 'qstp-consul-allure'
+  AWS_REGION: 'us-east-1'
 
 jobs:
-  list-s3-subdirectories:
+  process-and-upload:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Generate current date
-        id: date
-        run: echo "TODAY=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-      - name: List S3 directories for today
-        id: list-s3
+      - name: Run processing script
+        env:
+          TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
+          SOURCE_BUCKET: ${{ github.event.inputs.source_bucket || env.SOURCE_BUCKET }}
+          DEST_BUCKET: ${{ github.event.inputs.destination_bucket || env.DESTINATION_BUCKET }}
         run: |
-          BUCKET_NAME="${{ vars.QSTP_S3_BUCKET_NAME }}"
-          TODAY="${{ steps.date.outputs.TODAY }}"
-          echo "${{ steps.date.outputs.TODAY }}"
-          echo "Looking for subdirectories in: s3://$BUCKET_NAME/Result/consul/$TODAY/"
-          
-          echo "Listing all S3 buckets:"
-          aws s3 ls
-                    
-          SUBDIRS=$(aws s3api list-objects-v2 \
-            --bucket "$BUCKET_NAME" \
-            --prefix "Result/consul/$TODAY/" \
-            --delimiter "/" \
-            --query "CommonPrefixes[].Prefix" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -z "$SUBDIRS" ]; then
-            echo "No subdirectories found for date: $TODAY"
-            echo "subdirs_list=" >> $GITHUB_OUTPUT
-          else
-            echo "Found subdirectories:"
-            echo "$SUBDIRS" | tr '\t' '\n'
-            echo "$SUBDIRS"
-            SUBDIRS_JSON=$(echo "$SUBDIRS" | tr '\t' '\n' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            echo "subdirs_list=$SUBDIRS_JSON" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Display results
-        run: |
-          echo "=== Summary ==="
-          echo "Date: ${{ steps.date.outputs.TODAY }}"
-          echo "Bucket: ${{ secrets.S3_BUCKET_NAME }}"
-          echo "Subdirectories:"
-          
-          SUBDIRS="${{ steps.list-s3.outputs.subdirs_list }}"
-          if [ -z "$SUBDIRS" ] || [ "$SUBDIRS" = "null" ]; then
-            echo "No subdirectories found"
-          else
-            echo "$SUBDIRS" | jq -r '.[]'
-          fi
+          python allure-report/process_s3_folders.py
