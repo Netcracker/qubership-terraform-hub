@@ -34,7 +34,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -51,7 +51,349 @@ jobs:
       - name: Install dependencies
         run: pip install boto3 requests
 
+      - name: Create processing script
+        run: |
+          mkdir -p .github/scripts
+          
+          cat > .github/scripts/process_allure_folders.py << 'EOF'
+          #!/usr/bin/env python3
+          import boto3
+          import os
+          import time
+          import requests
+          import json
+          import shutil
+          import tempfile
+          from datetime import datetime
+          import sys
+          
+          def login_to_allure(allure_url, username, password):
+              """Login to Allure API and get token"""
+              try:
+                  url = f"{allure_url}/login"
+                  headers = {
+                      'accept': '*/*',
+                      'Content-Type': 'application/json'
+                  }
+                  data = {
+                      'username': username,
+                      'password': password
+                  }
+          
+                  print(f"  Logging in to Allure API...")
+                  response = requests.post(url, headers=headers, json=data, timeout=30)
+                  response.raise_for_status()
+          
+                  # Try to extract token from response
+                  try:
+                      response_data = response.json()
+                      # Try common token field names
+                      token = response_data.get('token') or \
+                              response_data.get('access_token') or \
+                              response_data.get('auth_token') or \
+                              response.headers.get('Authorization')
+          
+                      # Clean token if it has 'Bearer ' prefix
+                      if token and token.startswith('Bearer '):
+                          token = token[7:]
+          
+                      if not token:
+                          print(f"  ✗ No token found in response")
+                          print(f"  Response: {response.text}")
+                          return None
+          
+                      print(f"  ✓ Successfully logged in")
+                      return token
+          
+                  except json.JSONDecodeError:
+                      # Maybe token is in headers
+                      token = response.headers.get('Authorization')
+                      if token and token.startswith('Bearer '):
+                          token = token[7:]
+                          print(f"  ✓ Successfully logged in (token from headers)")
+                          return token
+                      else:
+                          print(f"  ✗ No valid token found")
+                          print(f"  Response: {response.text}")
+                          return None
+          
+              except requests.exceptions.RequestException as e:
+                  print(f"  ✗ Login failed: {str(e)}")
+                  if hasattr(e.response, 'text'):
+                      print(f"  Response: {e.response.text}")
+                  return None
+          
+          def generate_report(allure_url, token, project_id):
+              """Generate Allure report"""
+              try:
+                  url = f"{allure_url}/generate-report"
+                  params = {'project_id': project_id}
+                  headers = {
+                      'accept': '*/*',
+                      'Authorization': f'Bearer {token}'
+                  }
+          
+                  print(f"  Generating report for project: {project_id}...")
+                  response = requests.get(url, headers=headers, params=params, timeout=60)
+                  response.raise_for_status()
+          
+                  print(f"  ✓ Report generation triggered successfully")
+                  print(f"  Response: {response.text}")
+                  return True
+          
+              except requests.exceptions.RequestException as e:
+                  print(f"  ✗ Report generation failed: {str(e)}")
+                  if hasattr(e.response, 'text'):
+                      print(f"  Response: {e.response.text}")
+                  return False
+          
+          def download_report(allure_url, token, project_id, output_path):
+              """Download generated Allure report"""
+              try:
+                  url = f"{allure_url}/report/export"
+                  params = {'project_id': project_id}
+                  headers = {
+                      'accept': '*/*',
+                      'Authorization': f'Bearer {token}'
+                  }
+          
+                  print(f"  Downloading report...")
+                  response = requests.get(url, headers=headers, params=params, stream=True, timeout=120)
+                  response.raise_for_status()
+          
+                  # Save the report
+                  with open(output_path, 'wb') as f:
+                      for chunk in response.iter_content(chunk_size=8192):
+                          f.write(chunk)
+          
+                  file_size = os.path.getsize(output_path)
+                  print(f"  ✓ Report downloaded to {output_path} ({file_size} bytes)")
+                  return True
+          
+              except requests.exceptions.RequestException as e:
+                  print(f"  ✗ Report download failed: {str(e)}")
+                  if hasattr(e.response, 'text'):
+                      print(f"  Response: {e.response.text}")
+                  return False
+          
+          def main():
+              # Get environment variables
+              source_bucket = os.getenv('SOURCE_BUCKET', 'consul-test')
+              dest_bucket = os.getenv('DEST_BUCKET', 'qstp-consul-allure')
+              target_date = os.getenv('TARGET_DATE', datetime.now().strftime('%Y-%m-%d'))
+              aws_region = os.getenv('AWS_REGION', 'us-east-1')
+              allure_url = os.getenv('ALLURE_URL', 'https://k8s-qstpallu-allurein-413be1b9d5-1630657851.us-east-1.elb.amazonaws.com/allure-api/allure-docker-service')
+              project_id = os.getenv('PROJECT_ID', 'consul-test')
+          
+              # Get credentials from environment variables (set as GitHub secrets)
+              allure_username = os.getenv('ALLURE_USERNAME')
+              allure_password = os.getenv('ALLURE_PASSWORD')
+          
+              print(f"Processing date: {target_date}")
+              print(f"Source bucket: {source_bucket}")
+              print(f"Destination bucket: {dest_bucket}")
+              print(f"Allure URL: {allure_url}")
+              print(f"Project ID: {project_id}")
+          
+              # Validate credentials
+              if not allure_username or not allure_password:
+                  print("✗ Error: ALLURE_USERNAME and ALLURE_PASSWORD must be set as environment variables")
+                  sys.exit(1)
+          
+              # Initialize S3 client
+              s3_client = boto3.client('s3', region_name=aws_region)
+          
+              # List all folders for the target date
+              prefix = f"Result/consul/{target_date}/"
+          
+              try:
+                  response = s3_client.list_objects_v2(
+                      Bucket=source_bucket,
+                      Prefix=prefix,
+                      Delimiter='/'
+                  )
+              except Exception as e:
+                  print(f"✗ Error listing objects in bucket: {str(e)}")
+                  sys.exit(1)
+          
+              folders_processed = 0
+              folders_skipped = 0
+              report_files = []
+          
+              # Create temporary directory for downloaded reports
+              temp_dir = tempfile.mkdtemp(prefix='allure_reports_')
+              print(f"Created temp directory: {temp_dir}")
+          
+              try:
+                  # Process each folder
+                  if 'CommonPrefixes' in response:
+                      for folder in response['CommonPrefixes']:
+                          folder_name = folder['Prefix'].replace(prefix, '').rstrip('/')
+          
+                          print(f"\n{'='*60}")
+                          print(f"Processing folder: {folder_name}")
+                          print(f"{'='*60}")
+          
+                          # 1. Go to folder
+                          folder_prefix = f"{prefix}{folder_name}/"
+          
+                          # 2. Check for executed.lck file
+                          lock_key = f"{folder_prefix}executed.lck"
+                          try:
+                              s3_client.head_object(Bucket=source_bucket, Key=lock_key)
+                              print(f"✓ executed.lck file found - ignoring folder")
+                              folders_skipped += 1
+                              continue  # Skip to next folder
+                          except s3_client.exceptions.ClientError as e:
+                              error_code = e.response['Error']['Code']
+                              if error_code != '404':
+                                  print(f"✗ Error checking lock file: {error_code} - {str(e)}")
+                                  continue
+          
+                          print(f"✗ No executed.lck file found - starting processing")
+          
+                          # If no lock file found, process this folder
+          
+                          # 3. Copy files from allure-results to destination bucket root
+                          source_allure_prefix = f"{folder_prefix}allure-results/"
+                          temp_files = []
+                          timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+          
+                          try:
+                              # List objects in allure-results
+                              allure_objects = s3_client.list_objects_v2(
+                                  Bucket=source_bucket,
+                                  Prefix=source_allure_prefix
+                              )
+          
+                              if 'Contents' not in allure_objects or len(allure_objects['Contents']) == 0:
+                                  print(f"⚠ No allure-results found in {folder_name}")
+                                  files_copied = 0
+                              else:
+                                  # Copy each file to destination bucket root
+                                  files_copied = 0
+                                  for obj in allure_objects['Contents']:
+                                      source_key = obj['Key']
+                                      filename = source_key.split('/')[-1]
+          
+                                      # Skip directories
+                                      if not filename:
+                                          continue
+          
+                                      # Create unique filename with timestamp
+                                      unique_dest_key = f"temp_{timestamp}_{folder_name}_{filename}"
+          
+                                      print(f"  Copying: {filename} -> {dest_bucket}/{unique_dest_key}")
+                                      s3_client.copy_object(
+                                          CopySource={'Bucket': source_bucket, 'Key': source_key},
+                                          Bucket=dest_bucket,
+                                          Key=unique_dest_key
+                                      )
+                                      temp_files.append(unique_dest_key)
+                                      files_copied += 1
+          
+                                  print(f"✓ Copied {files_copied} files to destination bucket root")
+          
+                              # 4. Execute API calls if files were copied
+                              if files_copied > 0:
+                                  print(f"  Starting API calls...")
+          
+                                  # Login to get token
+                                  token = login_to_allure(allure_url, allure_username, allure_password)
+                                  if not token:
+                                      print(f"  ✗ Skipping API calls due to login failure")
+                                  else:
+                                      # Generate report
+                                      if generate_report(allure_url, token, project_id):
+                                          # Wait 1 minute
+                                          print(f"  Waiting 60 seconds for report generation...")
+                                          for i in range(60, 0, -1):
+                                              print(f"    {i:2d} seconds remaining...", end='\r')
+                                              time.sleep(1)
+                                          print(f"    Done waiting!{' '*20}")
+          
+                                          # Download report
+                                          report_filename = f"allure_report_{folder_name}_{timestamp}.zip"
+                                          report_path = os.path.join(temp_dir, report_filename)
+          
+                                          if download_report(allure_url, token, project_id, report_path):
+                                              report_files.append(report_path)
+                                              print(f"  ✓ Report saved: {report_path}")
+          
+                              # 5. Delete copied files from destination bucket
+                              if temp_files:
+                                  print(f"  Cleaning up temporary files from {dest_bucket}...")
+                                  for file_key in temp_files:
+                                      try:
+                                          s3_client.delete_object(Bucket=dest_bucket, Key=file_key)
+                                          print(f"    Deleted: {file_key}")
+                                      except Exception as e:
+                                          print(f"    ✗ Failed to delete {file_key}: {str(e)}")
+          
+                              # Create executed.lck file to mark as processed
+                              lock_content = f"""Processed at: {datetime.now().isoformat()}
+          Folder: {folder_name}
+          Files processed: {files_copied}
+          Report generated: {'Yes' if files_copied > 0 and len(report_files) > 0 else 'No'}
+          """
+                              s3_client.put_object(
+                                  Bucket=source_bucket,
+                                  Key=lock_key,
+                                  Body=lock_content.encode('utf-8')
+                              )
+                              print(f"✓ Created executed.lck file")
+          
+                              folders_processed += 1
+          
+                          except Exception as e:
+                              print(f"✗ Error processing folder {folder_name}: {str(e)}")
+                              import traceback
+                              traceback.print_exc()
+          
+                  # Print summary
+                  print(f"\n{'='*60}")
+                  print("PROCESSING SUMMARY")
+                  print(f"{'='*60}")
+                  total_folders = len(response.get('CommonPrefixes', []))
+                  print(f"Total folders found: {total_folders}")
+                  print(f"Folders processed: {folders_processed}")
+                  print(f"Folders skipped (had executed.lck): {folders_skipped}")
+                  print(f"Reports downloaded: {len(report_files)}")
+          
+                  # Save report list for GitHub Actions artifact
+                  if report_files:
+                      report_list_file = os.path.join(os.path.dirname(temp_dir), 'allure_reports_list.txt')
+                      with open(report_list_file, 'w') as f:
+                          for report_path in report_files:
+                              f.write(f"{report_path}\n")
+          
+                      print(f"\nReport files list saved to: {report_list_file}")
+          
+                      # Copy the list file to workspace for artifact upload
+                      workspace_list_file = os.path.join(os.getcwd(), 'allure_reports_list.txt')
+                      shutil.copy2(report_list_file, workspace_list_file)
+                      print(f"Copied to workspace: {workspace_list_file}")
+          
+                  if folders_processed == 0 and folders_skipped == 0 and total_folders == 0:
+                      print("⚠ No folders found for the specified date")
+          
+              finally:
+                  # Keep temp directory for artifact upload
+                  print(f"\nTemporary directory: {temp_dir}")
+          
+              return temp_dir if report_files else None
+          
+          if __name__ == '__main__':
+              reports_dir = main()
+              if reports_dir:
+                  print(f"\n::set-output name=reports_dir::{reports_dir}")
+          EOF
+          
+          # Make script executable
+          chmod +x .github/scripts/process_allure_folders.py
+
       - name: Run processing script
+        id: process
         env:
           TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
           SOURCE_BUCKET: ${{ github.event.inputs.source_bucket || env.SOURCE_BUCKET }}
@@ -61,25 +403,17 @@ jobs:
           PROJECT_ID: ${{ env.PROJECT_ID }}
           ALLURE_USERNAME: ${{ secrets.ALLURE_USERNAME }}
           ALLURE_PASSWORD: ${{ secrets.ALLURE_PASSWORD }}
-        run: |          
-          # Run the script
-          python allure-report/process_s3_folders.py
-          
-          # Check if reports were generated
-          if [ -f "${{ github.workspace }}/allure_reports_list.txt" ]; then
-            echo "Reports were generated successfully"
-            cat "${{ github.workspace }}/allure_reports_list.txt"
-          else
-            echo "No reports were generated"
-          fi
+        run: |
+          echo "Starting processing script..."
+          python .github/scripts/process_allure_folders.py
 
       - name: Upload Allure Reports as Artifacts
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: allure-reports
           path: |
-            ${{ github.workspace }}/allure_reports_list.txt
+            allure_reports_list.txt
             /tmp/allure_reports_*/
           retention-days: 30
 
@@ -94,12 +428,22 @@ jobs:
           echo "**Allure Project:** ${{ env.PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "${{ github.workspace }}/allure_reports_list.txt" ]; then
+          if [ -f "allure_reports_list.txt" ]; then
             echo "### Generated Reports" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             while IFS= read -r line; do
-              echo "- $(basename "$line")" >> $GITHUB_STEP_SUMMARY
-            done < "${{ github.workspace }}/allure_reports_list.txt"
+              filename=$(basename "$line")
+              echo "- \`$filename\`" >> $GITHUB_STEP_SUMMARY
+            done < "allure_reports_list.txt"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Reports are available as workflow artifacts." >> $GITHUB_STEP_SUMMARY
           else
             echo "No reports were generated during this run." >> $GITHUB_STEP_SUMMARY
           fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Completed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
