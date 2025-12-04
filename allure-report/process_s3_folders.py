@@ -35,8 +35,8 @@ class AllureAPIClient:
                 'Content-Type': 'application/json'
             }
             data = {
-                'username': username,
-                'password': password
+                'username': self.username,
+                'password': self.password
             }
 
             print(f"  Logging in to Allure API...")
@@ -63,8 +63,6 @@ class AllureAPIClient:
             self.csrf_token = cookies.get('csrf_access_token')
 
             print(f"  ✓ Token obtained, length: {len(self.token)}")
-            print(f"  Token preview: {self.token[:50]}...")
-            print(f"  Token expires in: {response_data['data'].get('expires_in', 'unknown')} seconds")
             if self.csrf_token:
                 print(f"  CSRF token: {self.csrf_token[:20]}...")
 
@@ -96,7 +94,7 @@ class AllureAPIClient:
             print(f"  Generating report for project: {project_id}...")
             print(f"  URL: {url}")
 
-            response = self.session.get(url, headers=headers, params=params, timeout=60)
+            response = self.session.get(url, params=params, timeout=60)
 
             print(f"  Response status: {response.status_code}")
 
@@ -262,37 +260,92 @@ def process_allure_report_folder(s3_client, bucket_name, report_prefix):
         print(f"  ✗ Error processing report folder: {str(e)}")
         return False
 
-def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, folder_prefix, folder_name):
-    """Copy files from source bucket's allure-results to dest bucket's results folder (flat structure)"""
-    # Clean the folder name
-    folder_name = folder_name.rstrip('/')
-
-    # Construct source path
-    source_allure_prefix = f"{folder_prefix}{folder_name}/allure-results/"
-
-    # Destination is flat structure: results/
-    dest_results_prefix = "results/"
-
-    print(f"  Looking for allure-results in: {source_allure_prefix}")
-    print(f"  Will copy files to: {dest_results_prefix} (flat structure)")
+def find_allure_results_files(s3_client, source_bucket, folder_path):
+    """
+    Find all allure-results files in a folder, handling nested structures
+    """
+    print(f"  Searching for allure-results in: {folder_path}")
 
     try:
+        # First, try the direct path
+        source_allure_prefix = f"{folder_path}allure-results/"
+
         # List objects in source allure-results
         allure_objects = s3_client.list_objects_v2(
             Bucket=source_bucket,
             Prefix=source_allure_prefix
         )
 
-        if 'Contents' not in allure_objects or len(allure_objects['Contents']) == 0:
-            print(f"  ⚠ No files found in {source_allure_prefix}")
+        if 'Contents' in allure_objects and len(allure_objects['Contents']) > 0:
+            print(f"  Found {len(allure_objects['Contents'])} files in direct path")
+            return allure_objects['Contents'], source_allure_prefix
+
+        # If not found, search for any subfolders that might contain allure-results
+        print(f"  No files found in direct path, searching subfolders...")
+
+        # List all contents in the folder
+        all_objects = s3_client.list_objects_v2(
+            Bucket=source_bucket,
+            Prefix=folder_path
+        )
+
+        if 'Contents' not in all_objects:
+            print(f"  No objects found in folder")
+            return [], None
+
+        # Look for allure-results in any path
+        allure_files = []
+        allure_prefix = None
+
+        for obj in all_objects['Contents']:
+            if 'allure-results' in obj['Key'] and not obj['Key'].endswith('/'):
+                allure_files.append(obj)
+                # Extract the prefix
+                key_parts = obj['Key'].split('/')
+                for i in range(len(key_parts)):
+                    if key_parts[i] == 'allure-results':
+                        allure_prefix = '/'.join(key_parts[:i+1]) + '/'
+                        break
+
+        if allure_files:
+            print(f"  Found {len(allure_files)} allure-results files in subfolders")
+            return allure_files, allure_prefix
+
+        print(f"  No allure-results files found")
+        return [], None
+
+    except Exception as e:
+        print(f"  ✗ Error searching for files: {str(e)}")
+        return [], None
+
+def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, folder_prefix, folder_name):
+    """Copy files from source bucket's allure-results to dest bucket's results folder (flat structure)"""
+    # Clean the folder name
+    folder_name = folder_name.rstrip('/')
+
+    # Construct folder path
+    folder_path = f"{folder_prefix}{folder_name}/"
+
+    # Destination is flat structure: results/
+    dest_results_prefix = "results/"
+
+    print(f"  Will copy files to: {dest_results_prefix} (flat structure)")
+
+    try:
+        # Find allure-results files (handles nested structure)
+        allure_files, source_allure_prefix = find_allure_results_files(s3_client, source_bucket, folder_path)
+
+        if not allure_files:
+            print(f"  ⚠ No allure-results files found")
             return 0
 
-        print(f"  Found {len(allure_objects['Contents'])} files in allure-results")
+        print(f"  Source prefix: {source_allure_prefix}")
 
         # Copy each file to destination results folder (flat structure)
         files_copied = 0
-        for obj in allure_objects['Contents']:
+        for obj in allure_files:
             source_key = obj['Key']
+
             # Skip if it's a directory marker
             if source_key.endswith('/'):
                 continue
@@ -427,7 +480,7 @@ def main():
     print(f"Allure URL: {allure_url}")
     print(f"Project ID: {project_id}")
     print(f"Note: SSL verification is DISABLED for self-signed certificates")
-    print(f"\nNew workflow:")
+    print(f"\nWorkflow:")
     print(f"1. Copy allure-results to {dest_bucket}/results/ (flat structure)")
     print(f"2. Generate report via API")
     print(f"3. Copy latest report from {dest_bucket}/reports/latest/ to {source_bucket}/allure-report/")
@@ -489,13 +542,13 @@ def main():
                 # If no lock file found, process this folder
                 try:
                     # 1. Copy files from allure-results to destination bucket's results folder (flat)
-                    print(f"\nStep 1: Copying allure-results to destination bucket (flat structure)...")
+                    print(f"\n[Step 1/4] Copying allure-results to destination bucket...")
                     files_copied = copy_allure_results_to_destination(
                         s3_client, source_bucket, dest_bucket, prefix, folder_name
                     )
 
                     if files_copied == 0:
-                        print(f"  ⚠ No files to process, skipping API calls")
+                        print(f"  ⚠ No files to process, skipping remaining steps")
 
                         # Still create lock file to mark as processed
                         lock_content = f"""Processed at: {datetime.now().isoformat()}
@@ -513,7 +566,7 @@ Status: No allure-results found
                         continue
 
                     # 2. Execute API call to generate report
-                    print(f"\nStep 2: Generating report via API...")
+                    print(f"\n[Step 2/4] Generating report via API...")
 
                     # Initialize Allure API client
                     allure_client = AllureAPIClient(allure_url, allure_username, allure_password)
@@ -532,16 +585,17 @@ Status: No allure-results found
                             print(f"    Done waiting!{' '*20}")
 
                             # 3. Copy latest report from destination bucket to source bucket
-                            print(f"\nStep 3: Copying latest report to source bucket...")
+                            print(f"\n[Step 3/4] Copying latest report to source bucket...")
                             report_files_copied = copy_latest_report_to_source(
                                 s3_client, dest_bucket, source_bucket, prefix, folder_name
                             )
 
                             if report_files_copied == 0:
                                 print(f"  ⚠ No report files found in {dest_bucket}/reports/latest/")
+                                print(f"  This might mean report generation failed or hasn't completed yet")
                             else:
                                 # 4. Process HTML files to embed JSON data
-                                print(f"\nStep 4: Processing HTML files to embed JSON data...")
+                                print(f"\n[Step 4/4] Processing HTML files to embed JSON data...")
                                 source_report_prefix = f"{prefix}{folder_name}/allure-report/"
                                 html_processed = process_allure_report_folder(
                                     s3_client, source_bucket, source_report_prefix
@@ -553,7 +607,7 @@ Status: No allure-results found
                                     print(f"  ⚠ No HTML files found or processed")
 
                     # 5. Clean up: Remove temporary results from destination bucket
-                    print(f"\nStep 5: Cleaning up temporary files from destination bucket...")
+                    print(f"\n[Cleanup] Cleaning up temporary files from destination bucket...")
                     cleanup_destination_results(s3_client, dest_bucket, folder_name)
 
                     # 6. Create executed.lck file to mark as processed
