@@ -35,8 +35,8 @@ class AllureAPIClient:
                 'Content-Type': 'application/json'
             }
             data = {
-                'username': self.username,
-                'password': self.password
+                'username': username,
+                'password': password
             }
 
             print(f"  Logging in to Allure API...")
@@ -96,7 +96,7 @@ class AllureAPIClient:
             print(f"  Generating report for project: {project_id}...")
             print(f"  URL: {url}")
 
-            response = self.session.get(url, params=params, timeout=60)
+            response = self.session.get(url, headers=headers, params=params, timeout=60)
 
             print(f"  Response status: {response.status_code}")
 
@@ -362,7 +362,7 @@ def copy_latest_report_to_source(s3_client, dest_bucket, source_bucket, folder_p
             print(f"    Copying: {relative_path}")
 
             s3_client.copy_object(
-                CopySource={'Bucket': dest_bucket, Key=source_key},
+                CopySource={'Bucket': dest_bucket, 'Key': source_key},
                 Bucket=source_bucket,
                 Key=dest_key
             )
