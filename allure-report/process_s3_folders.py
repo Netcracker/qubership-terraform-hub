@@ -119,14 +119,79 @@ class AllureAPIClient:
 
 def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, folder_prefix, folder_name):
     """Copy files from source bucket's allure-results to dest bucket's results folder"""
-    source_allure_prefix = f"{folder_prefix}{folder_name}/allure-results/"
+    # Handle nested folder structure: folder_name might already include subfolders
+    # For example: folder_name could be "00-20-18/00-20-18"
+
+    # Clean the folder name - remove trailing slash if present
+    folder_name = folder_name.rstrip('/')
+
+    # Construct source path - check for both with and without trailing slash
+    source_paths_to_try = [
+        f"{folder_prefix}{folder_name}/allure-results/",
+        f"{folder_prefix}{folder_name}/allure-results"  # Without trailing slash
+    ]
+
     dest_results_prefix = f"results/{folder_name}/"
+
+    print(f"  Looking for allure-results in folder: {folder_name}")
+
+    for source_allure_prefix in source_paths_to_try:
+        print(f"  Trying source path: {source_allure_prefix}")
+
+        try:
+            # List objects in source allure-results
+            allure_objects = s3_client.list_objects_v2(
+                Bucket=source_bucket,
+                Prefix=source_allure_prefix,
+                MaxKeys=1  # Just check if there are any objects
+            )
+
+            if 'Contents' in allure_objects and len(allure_objects['Contents']) > 0:
+                print(f"  ✓ Found files in: {source_allure_prefix}")
+                break
+            else:
+                print(f"  ✗ No files found in: {source_allure_prefix}")
+                source_allure_prefix = None
+        except Exception as e:
+            print(f"  ⚠ Error checking {source_allure_prefix}: {str(e)}")
+            source_allure_prefix = None
+
+    if not source_allure_prefix:
+        # Try one more approach: list all objects and find allure-results
+        print(f"  Searching for allure-results in folder hierarchy...")
+        try:
+            # List objects in the parent folder
+            parent_objects = s3_client.list_objects_v2(
+                Bucket=source_bucket,
+                Prefix=folder_prefix,
+                Delimiter=''
+            )
+
+            if 'Contents' in parent_objects:
+                for obj in parent_objects['Contents']:
+                    if 'allure-results' in obj['Key']:
+                        # Extract the allure-results prefix
+                        key_parts = obj['Key'].split('/')
+                        for i, part in enumerate(key_parts):
+                            if part == 'allure-results':
+                                source_allure_prefix = '/'.join(key_parts[:i+1]) + '/'
+                                print(f"  Found allure-results at: {source_allure_prefix}")
+                                break
+                        if source_allure_prefix:
+                            break
+
+        except Exception as e:
+            print(f"  ⚠ Error searching for allure-results: {str(e)}")
+
+    if not source_allure_prefix:
+        print(f"  ✗ Could not find allure-results folder")
+        return 0
 
     print(f"  Copying from: {source_allure_prefix}")
     print(f"  Copying to: {dest_results_prefix}")
 
     try:
-        # List objects in source allure-results
+        # Now list all objects in the found allure-results
         allure_objects = s3_client.list_objects_v2(
             Bucket=source_bucket,
             Prefix=source_allure_prefix
@@ -136,6 +201,8 @@ def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, fo
         if 'Contents' not in allure_objects or len(allure_objects['Contents']) == 0:
             print(f"  ⚠ No files found in {source_allure_prefix}")
             return 0
+
+        print(f"  Found {len(allure_objects['Contents'])} objects in allure-results")
 
         # Copy each file to destination results folder
         for obj in allure_objects['Contents']:
@@ -147,7 +214,7 @@ def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, fo
             filename = source_key.split('/')[-1]
             dest_key = f"{dest_results_prefix}{filename}"
 
-            print(f"    Copying: {filename} -> {dest_bucket}/{dest_key}")
+            print(f"    Copying: {filename} ({obj.get('Size', 'unknown')} bytes)")
             s3_client.copy_object(
                 CopySource={'Bucket': source_bucket, 'Key': source_key},
                 Bucket=dest_bucket,
@@ -164,6 +231,9 @@ def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, fo
 
 def copy_latest_report_to_source(s3_client, dest_bucket, source_bucket, folder_prefix, folder_name):
     """Copy latest report from dest bucket to source bucket's allure-report folder"""
+    # Clean the folder name
+    folder_name = folder_name.rstrip('/')
+
     source_report_prefix = f"{folder_prefix}{folder_name}/allure-report/"
     dest_latest_prefix = f"reports/latest/"
 
@@ -182,6 +252,8 @@ def copy_latest_report_to_source(s3_client, dest_bucket, source_bucket, folder_p
             print(f"  ⚠ No files found in {dest_latest_prefix}")
             return 0
 
+        print(f"  Found {len(latest_objects['Contents'])} objects in latest report")
+
         # Copy each file to source allure-report folder
         for obj in latest_objects['Contents']:
             source_key = obj['Key']
@@ -197,7 +269,7 @@ def copy_latest_report_to_source(s3_client, dest_bucket, source_bucket, folder_p
             dest_key = f"{source_report_prefix}{relative_path}"
 
             # Create parent directories if needed (S3 handles this implicitly, but we log it)
-            print(f"    Copying: {relative_path} -> {source_bucket}/{source_report_prefix}{relative_path}")
+            print(f"    Copying: {relative_path} -> {relative_path}")
 
             s3_client.copy_object(
                 CopySource={'Bucket': dest_bucket, 'Key': source_key},
@@ -265,17 +337,18 @@ def main():
         # Process each folder
         if 'CommonPrefixes' in response:
             for folder in response['CommonPrefixes']:
-                folder_name = folder['Prefix'].replace(prefix, '').rstrip('/')
+                # Get the full folder path relative to the prefix
+                folder_path = folder['Prefix']
+                # Remove the main prefix to get the folder name
+                folder_name = folder_path.replace(prefix, '').rstrip('/')
 
                 print(f"\n{'='*60}")
                 print(f"Processing folder: {folder_name}")
+                print(f"Full path: {folder_path}")
                 print(f"{'='*60}")
 
-                # 1. Go to folder
-                folder_prefix = f"{prefix}{folder_name}/"
-
-                # 2. Check for executed.lck file
-                lock_key = f"{folder_prefix}executed.lck"
+                # Check for executed.lck file
+                lock_key = f"{folder_path}executed.lck"
                 try:
                     s3_client.head_object(Bucket=source_bucket, Key=lock_key)
                     print(f"✓ executed.lck file found - ignoring folder")
@@ -291,19 +364,38 @@ def main():
 
                 # If no lock file found, process this folder
                 try:
-                    # 3. Copy files from allure-results to destination bucket's results folder
+                    # 1. Copy files from allure-results to destination bucket's results folder
                     print(f"\nStep 1: Copying allure-results to destination bucket...")
                     files_copied = copy_allure_results_to_destination(
-                        s3_client, source_bucket, dest_bucket, folder_prefix, folder_name
+                        s3_client, source_bucket, dest_bucket, prefix, folder_name
                     )
 
                     if files_copied == 0:
                         print(f"  ⚠ No files to process, skipping API calls")
+                        # Debug: List what's actually in the folder
+                        print(f"\n  Debug: Listing contents of {folder_path}")
+                        try:
+                            debug_objects = s3_client.list_objects_v2(
+                                Bucket=source_bucket,
+                                Prefix=folder_path,
+                                Delimiter=''
+                            )
+                            if 'Contents' in debug_objects:
+                                print(f"  Found {len(debug_objects['Contents'])} objects:")
+                                for obj in debug_objects['Contents'][:10]:  # Show first 10
+                                    print(f"    - {obj['Key']} ({obj.get('Size', 'unknown')} bytes)")
+                            if 'CommonPrefixes' in debug_objects:
+                                print(f"  Found {len(debug_objects['CommonPrefixes'])} subfolders:")
+                                for sub in debug_objects['CommonPrefixes']:
+                                    print(f"    - {sub['Prefix']}")
+                        except Exception as debug_e:
+                            print(f"  Debug error: {str(debug_e)}")
+
                         # Still create lock file to mark as processed (even with no files)
                         lock_content = f"""Processed at: {datetime.now().isoformat()}
 Folder: {folder_name}
 Files processed: 0
-Status: No allure-results found
+Status: No allure-results found after search
 """
                         s3_client.put_object(
                             Bucket=source_bucket,
@@ -314,7 +406,7 @@ Status: No allure-results found
                         folders_processed += 1
                         continue
 
-                    # 4. Execute API call to generate report
+                    # 2. Execute API call to generate report
                     print(f"\nStep 2: Generating report via API...")
 
                     # Initialize Allure API client
@@ -333,16 +425,16 @@ Status: No allure-results found
                                 time.sleep(1)
                             print(f"    Done waiting!{' '*20}")
 
-                            # 5. Copy latest report from destination bucket to source bucket
+                            # 3. Copy latest report from destination bucket to source bucket
                             print(f"\nStep 3: Copying latest report to source bucket...")
                             report_files_copied = copy_latest_report_to_source(
-                                s3_client, dest_bucket, source_bucket, folder_prefix, folder_name
+                                s3_client, dest_bucket, source_bucket, prefix, folder_name
                             )
 
                             if report_files_copied == 0:
                                 print(f"  ⚠ No report files found in {dest_bucket}/reports/latest/")
 
-                    # 6. Clean up: Remove temporary results from destination bucket
+                    # 4. Clean up: Remove temporary results from destination bucket
                     print(f"\nStep 4: Cleaning up temporary files from destination bucket...")
                     try:
                         # Delete the temporary results folder
@@ -355,21 +447,23 @@ Status: No allure-results found
                         )
 
                         if 'Contents' in result_objects:
+                            delete_count = 0
                             for obj in result_objects['Contents']:
                                 s3_client.delete_object(Bucket=dest_bucket, Key=obj['Key'])
-                                print(f"    Deleted: {obj['Key']}")
-
-                        print(f"  ✓ Cleaned up {results_prefix}")
+                                delete_count += 1
+                            print(f"  ✓ Cleaned up {results_prefix} ({delete_count} files)")
+                        else:
+                            print(f"  ⚠ No files found to clean up in {results_prefix}")
                     except Exception as e:
                         print(f"  ⚠ Error cleaning up: {str(e)}")
 
-                    # 7. Create executed.lck file to mark as processed
+                    # 5. Create executed.lck file to mark as processed
                     lock_content = f"""Processed at: {datetime.now().isoformat()}
 Folder: {folder_name}
 Files processed: {files_copied}
 Report generated: {'Yes' if files_copied > 0 else 'No'}
 Allure results copied to: {dest_bucket}/results/{folder_name}/
-Allure report copied to: {source_bucket}/{folder_prefix}allure-report/
+Allure report copied to: {source_bucket}/{prefix}{folder_name}/allure-report/
 """
                     s3_client.put_object(
                         Bucket=source_bucket,
