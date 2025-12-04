@@ -7,8 +7,11 @@ import json
 import shutil
 import tempfile
 import urllib3
+import re
+import base64
 from datetime import datetime
 import sys
+from io import BytesIO
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -117,6 +120,140 @@ class AllureAPIClient:
                 print(f"  Response text: {e.response.text[:200]}")
             return False
 
+def embed_json_files_in_html(s3_client, bucket_name, html_key, report_prefix):
+    """
+    Embed JSON files directly into index.html to make it self-contained.
+    Replaces fetch("*.json") calls with inline JSON data.
+    """
+    print(f"  Processing HTML file: {html_key}")
+
+    try:
+        # Download the HTML file
+        response = s3_client.get_object(Bucket=bucket_name, Key=html_key)
+        html_content = response['Body'].read().decode('utf-8')
+
+        # Find all JSON file references
+        json_patterns = [
+            r'fetch\("([^"]+\.json)"\)',  # fetch("data/test-cases.json")
+            r"fetch\('([^']+\.json)'\)",  # fetch('data/test-cases.json')
+            r'\.load\("([^"]+\.json)"\)',  # .load("data/test-cases.json")
+            r"\.load\('([^']+\.json)'\)",  # .load('data/test-cases.json')
+            r'src="([^"]+\.json)"',        # src="data/test-cases.json"
+            r"src='([^']+\.json)'",        # src='data/test-cases.json'
+        ]
+
+        json_files_found = set()
+        for pattern in json_patterns:
+            matches = re.findall(pattern, html_content)
+            for match in matches:
+                # Handle relative paths
+                if match.startswith('/'):
+                    json_key = match[1:]  # Remove leading slash
+                elif match.startswith('./'):
+                    # Get directory from HTML path
+                    html_dir = '/'.join(html_key.split('/')[:-1])
+                    json_key = f"{html_dir}/{match[2:]}"
+                else:
+                    # Get directory from HTML path
+                    html_dir = '/'.join(html_key.split('/')[:-1])
+                    json_key = f"{html_dir}/{match}"
+
+                json_files_found.add(json_key)
+
+        print(f"  Found {len(json_files_found)} JSON file references")
+
+        # Process each JSON file and embed it
+        for json_key in json_files_found:
+            try:
+                # Download the JSON file
+                json_response = s3_client.get_object(Bucket=bucket_name, Key=json_key)
+                json_data = json_response['Body'].read().decode('utf-8')
+
+                # Parse to ensure it's valid JSON
+                parsed_json = json.loads(json_data)
+
+                # Create replacement
+                json_escaped = json.dumps(parsed_json).replace('\\', '\\\\').replace('"', '\\"')
+
+                # Replace all occurrences of this JSON file with embedded data
+                # Pattern for fetch calls
+                html_content = re.sub(
+                    rf'fetch\("([^"]*{re.escape(json_key.split('/')[-1])})"\)',
+                    f'Promise.resolve({{json: () => Promise.resolve({json_escaped})}})',
+                    html_content
+                )
+                html_content = re.sub(
+                    rf"fetch\('([^']*{re.escape(json_key.split('/')[-1])})'\)",
+                    f'Promise.resolve({{json: () => Promise.resolve({json_escaped})}})',
+                    html_content
+                )
+
+                print(f"    Embedded: {json_key.split('/')[-1]}")
+
+            except Exception as e:
+                print(f"    ⚠ Could not embed {json_key}: {str(e)}")
+
+        # Upload the modified HTML file back to S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=html_key,
+            Body=html_content.encode('utf-8'),
+            ContentType='text/html'
+        )
+
+        print(f"  ✓ Updated HTML file with embedded JSON data")
+        return True
+
+    except Exception as e:
+        print(f"  ✗ Error processing HTML file: {str(e)}")
+        return False
+
+def process_allure_report_folder(s3_client, bucket_name, report_prefix):
+    """
+    Process all index.html files in the allure-report folder to embed JSON data
+    """
+    print(f"  Looking for index.html files in: {report_prefix}")
+
+    try:
+        # List all objects in the allure-report folder
+        objects = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix=report_prefix
+        )
+
+        html_files = []
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                if obj['Key'].endswith('index.html'):
+                    html_files.append(obj['Key'])
+
+        print(f"  Found {len(html_files)} index.html files")
+
+        for html_file in html_files:
+            # Get the directory containing the HTML file
+            html_dir = '/'.join(html_file.split('/')[:-1]) + '/'
+
+            # Process the HTML file to embed JSON data
+            embed_json_files_in_html(s3_client, bucket_name, html_file, html_dir)
+
+            # Also look for any other HTML files in the same directory
+            dir_objects = s3_client.list_objects_v2(
+                Bucket=bucket_name,
+                Prefix=html_dir
+            )
+
+            if 'Contents' in dir_objects:
+                for obj in dir_objects['Contents']:
+                    if obj['Key'].endswith('.html') and obj['Key'] != html_file:
+                        print(f"  Also processing: {obj['Key']}")
+                        embed_json_files_in_html(s3_client, bucket_name, obj['Key'], html_dir)
+
+        return len(html_files) > 0
+
+    except Exception as e:
+        print(f"  ✗ Error processing report folder: {str(e)}")
+        return False
+
 def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, folder_prefix, folder_name):
     """Copy files from source bucket's allure-results to dest bucket's results folder (flat structure)"""
     # Clean the folder name
@@ -140,19 +277,6 @@ def copy_allure_results_to_destination(s3_client, source_bucket, dest_bucket, fo
 
         if 'Contents' not in allure_objects or len(allure_objects['Contents']) == 0:
             print(f"  ⚠ No files found in {source_allure_prefix}")
-
-            # Try to find the allure-results folder by listing the parent
-            print(f"  Searching for allure-results in parent folder...")
-            parent_objects = s3_client.list_objects_v2(
-                Bucket=source_bucket,
-                Prefix=f"{folder_prefix}{folder_name}/",
-                Delimiter=''
-            )
-
-            if 'Contents' in parent_objects:
-                for obj in parent_objects['Contents']:
-                    print(f"    Found: {obj['Key']} ({obj.get('Size', 'unknown')} bytes)")
-
             return 0
 
         print(f"  Found {len(allure_objects['Contents'])} files in allure-results")
@@ -299,6 +423,7 @@ def main():
     print(f"1. Copy allure-results to {dest_bucket}/results/ (flat structure)")
     print(f"2. Generate report via API")
     print(f"3. Copy latest report from {dest_bucket}/reports/latest/ to {source_bucket}/allure-report/")
+    print(f"4. Process HTML files to embed JSON data")
 
     # Validate credentials
     if not allure_username or not allure_password:
@@ -406,16 +531,29 @@ Status: No allure-results found
 
                             if report_files_copied == 0:
                                 print(f"  ⚠ No report files found in {dest_bucket}/reports/latest/")
+                            else:
+                                # 4. Process HTML files to embed JSON data
+                                print(f"\nStep 4: Processing HTML files to embed JSON data...")
+                                source_report_prefix = f"{prefix}{folder_name}/allure-report/"
+                                html_processed = process_allure_report_folder(
+                                    s3_client, source_bucket, source_report_prefix
+                                )
 
-                    # 4. Clean up: Remove temporary results from destination bucket
-                    print(f"\nStep 4: Cleaning up temporary files from destination bucket...")
+                                if html_processed:
+                                    print(f"  ✓ Successfully processed HTML files")
+                                else:
+                                    print(f"  ⚠ No HTML files found or processed")
+
+                    # 5. Clean up: Remove temporary results from destination bucket
+                    print(f"\nStep 5: Cleaning up temporary files from destination bucket...")
                     cleanup_destination_results(s3_client, dest_bucket, folder_name)
 
-                    # 5. Create executed.lck file to mark as processed
+                    # 6. Create executed.lck file to mark as processed
                     lock_content = f"""Processed at: {datetime.now().isoformat()}
 Folder: {folder_name}
 Files processed: {files_copied}
-Report generated: {'Yes' if files_copied > 0 else 'No'}
+Report files copied: {report_files_copied if 'report_files_copied' in locals() else 0}
+HTML files processed: {'Yes' if 'html_processed' in locals() and html_processed else 'No'}
 Allure results copied to: {dest_bucket}/results/ (as {folder_name}_* files)
 Allure report copied to: {source_bucket}/{prefix}{folder_name}/allure-report/
 """
