@@ -148,25 +148,25 @@ def embed_json_files_in_html(s3_client, bucket_name, html_key, report_prefix):
             for match in matches:
                 # Handle relative paths
                 if match.startswith('/'):
-                    json_key = match[1:]  # Remove leading slash
+                    json_key_path = match[1:]  # Remove leading slash
                 elif match.startswith('./'):
                     # Get directory from HTML path
                     html_dir = '/'.join(html_key.split('/')[:-1])
-                    json_key = f"{html_dir}/{match[2:]}"
+                    json_key_path = f"{html_dir}/{match[2:]}"
                 else:
                     # Get directory from HTML path
                     html_dir = '/'.join(html_key.split('/')[:-1])
-                    json_key = f"{html_dir}/{match}"
+                    json_key_path = f"{html_dir}/{match}"
 
-                json_files_found.add(json_key)
+                json_files_found.add(json_key_path)
 
         print(f"  Found {len(json_files_found)} JSON file references")
 
         # Process each JSON file and embed it
-        for json_key in json_files_found:
+        for json_key_path in json_files_found:
             try:
                 # Download the JSON file
-                json_response = s3_client.get_object(Bucket=bucket_name, Key=json_key)
+                json_response = s3_client.get_object(Bucket=bucket_name, Key=json_key_path)
                 json_data = json_response['Body'].read().decode('utf-8')
 
                 # Parse to ensure it's valid JSON
@@ -175,23 +175,31 @@ def embed_json_files_in_html(s3_client, bucket_name, html_key, report_prefix):
                 # Create replacement
                 json_escaped = json.dumps(parsed_json).replace('\\', '\\\\').replace('"', '\\"')
 
+                # Get just the filename for matching
+                json_filename = json_key_path.split('/')[-1]
+                escaped_filename = re.escape(json_filename)
+
                 # Replace all occurrences of this JSON file with embedded data
-                # Pattern for fetch calls
+                # Pattern for fetch calls with double quotes
+                fetch_double_pattern = rf'fetch\("([^"]*{escaped_filename})"\)'
                 html_content = re.sub(
-                    rf'fetch\("([^"]*{re.escape(json_key.split('/')[-1])})"\)',
-                    f'Promise.resolve({{json: () => Promise.resolve({json_escaped})}})',
-                    html_content
-                )
-                html_content = re.sub(
-                    rf"fetch\('([^']*{re.escape(json_key.split('/')[-1])})'\)",
+                    fetch_double_pattern,
                     f'Promise.resolve({{json: () => Promise.resolve({json_escaped})}})',
                     html_content
                 )
 
-                print(f"    Embedded: {json_key.split('/')[-1]}")
+                # Pattern for fetch calls with single quotes
+                fetch_single_pattern = rf"fetch\('([^']*{escaped_filename})'\)"
+                html_content = re.sub(
+                    fetch_single_pattern,
+                    f'Promise.resolve({{json: () => Promise.resolve({json_escaped})}})',
+                    html_content
+                )
+
+                print(f"    Embedded: {json_filename}")
 
             except Exception as e:
-                print(f"    ⚠ Could not embed {json_key}: {str(e)}")
+                print(f"    ⚠ Could not embed {json_key_path}: {str(e)}")
 
         # Upload the modified HTML file back to S3
         s3_client.put_object(
@@ -354,7 +362,7 @@ def copy_latest_report_to_source(s3_client, dest_bucket, source_bucket, folder_p
             print(f"    Copying: {relative_path}")
 
             s3_client.copy_object(
-                CopySource={'Bucket': dest_bucket, 'Key': source_key},
+                CopySource={'Bucket': dest_bucket, Key=source_key},
                 Bucket=source_bucket,
                 Key=dest_key
             )
@@ -402,7 +410,7 @@ def cleanup_destination_results(s3_client, dest_bucket, folder_name):
 
 def main():
     # Get environment variables
-    source_bucket = os.getenv('SOURCE_BUCKET', 'consul-test')
+    source_bucket = os.getenv('SOURCE_BUCKET', 'qstp-consul')
     dest_bucket = os.getenv('DEST_BUCKET', 'qstp-consul-allure')
     target_date = os.getenv('TARGET_DATE', datetime.now().strftime('%Y-%m-%d'))
     aws_region = os.getenv('AWS_REGION', 'us-east-1')
