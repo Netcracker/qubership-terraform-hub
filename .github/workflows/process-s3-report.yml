@@ -15,7 +15,7 @@ env:
   S3_BUCKET: qstp-consul
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
-  SOURCE_DIR: ./s3-data/allure-results
+  SOURCE_DIR: ./allure-results
 
 jobs:
   generate-allure-report:
@@ -33,13 +33,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Setup and debug
-        id: setup
+      - name: Parse S3 path
+        id: parse_path
         run: |
-          echo "GitHub Event: ${{ github.event_name }}"
-          echo "GitHub Ref: ${{ github.ref }}"
-          echo "GitHub SHA: ${{ github.sha }}"
-          
           # Parse S3 directory from input
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             S3_DIR="${{ github.event.inputs.s3_directory }}"
@@ -57,7 +53,6 @@ jobs:
           echo "S3_DIR=$S3_DIR" >> $GITHUB_OUTPUT
           
           # Extract timestamp path for report
-          # Convert Result/consul/2025-12-10/00-42-50 to 2025-12-10/00-42-50
           TIMESTAMP_PATH=$(echo "$S3_DIR" | sed 's|^Result/consul/||')
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
           
@@ -65,322 +60,258 @@ jobs:
           SAFE_ID=$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
           
-          echo "Parsed S3 directory: $S3_DIR"
-          echo "Report path: Report/consul/$TIMESTAMP_PATH"
-          echo "Safe ID: $SAFE_ID"
-          echo "Source directory: $SOURCE_DIR"
-          
-          # List S3 bucket to verify access
-          echo "Listing S3 bucket root:"
-          aws s3 ls "s3://$S3_BUCKET/" || true
+          echo "Parsed: $S3_DIR → Report/consul/$TIMESTAMP_PATH"
 
-      - name: Download test results from S3
+      - name: Download Allure results from S3
+        id: download
         run: |
-          echo "Downloading from: s3://$S3_BUCKET/${{ steps.setup.outputs.S3_DIR }}/"
+          echo "Downloading from: s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/"
           mkdir -p $SOURCE_DIR
           
-          # Try to sync all files - use recursive to get all files
-          echo "Syncing files from S3..."
-          aws s3 sync "s3://$S3_BUCKET/${{ steps.setup.outputs.S3_DIR }}/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json"
+          # First, check what's in S3
+          echo "Listing S3 contents:"
+          aws s3 ls "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" --recursive || true
           
-          # Also try without filters if no files found
-          if [ ! "$(find $SOURCE_DIR -name '*.xml' -o -name '*.json' | head -1)" ]; then
-            echo "No XML/JSON files found with filters, trying without filters..."
-            aws s3 sync "s3://$S3_BUCKET/${{ steps.setup.outputs.S3_DIR }}/" $SOURCE_DIR/
-          fi
+          # Download ALL files from the S3 directory (including subdirectories)
+          echo "Downloading files..."
+          aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
           
           # Check what was downloaded
-          echo "Downloaded files in $SOURCE_DIR:"
-          find $SOURCE_DIR -type f | head -30
-          echo "Total files: $(find $SOURCE_DIR -type f 2>/dev/null | wc -l || echo 0)"
+          echo "Downloaded files:"
+          find $SOURCE_DIR -type f | sort
           
-          # Show file types and counts
-          echo ""
-          echo "File type breakdown:"
-          find $SOURCE_DIR -type f -name "*.xml" | wc -l | xargs echo "XML files:"
-          find $SOURCE_DIR -type f -name "*.json" | wc -l | xargs echo "JSON files:"
+          # Count files
+          XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
+          JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
+          echo "XML_FILES=$XML_COUNT" >> $GITHUB_OUTPUT
+          echo "JSON_FILES=$JSON_COUNT" >> $GITHUB_OUTPUT
+          echo "Total files downloaded: $(find $SOURCE_DIR -type f | wc -l)"
           
-          # List first few XML/JSON files
-          echo ""
-          echo "First few test files:"
-          find $SOURCE_DIR -type f \( -name "*.xml" -o -name "*.json" \) | head -10
+          # If no files, try downloading everything
+          if [ $XML_COUNT -eq 0 ] && [ $JSON_COUNT -eq 0 ]; then
+            echo "No XML/JSON files found with filters, downloading everything..."
+            aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/
           
-          # If still no files, list S3 contents
-          if [ ! "$(find $SOURCE_DIR -type f | head -1)" ]; then
-            echo ""
-            echo "Listing files in S3 source:"
-            aws s3 ls "s3://$S3_BUCKET/${{ steps.setup.outputs.S3_DIR }}/" --recursive || true
+            XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
+            JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
+            echo "After full sync - XML: $XML_COUNT, JSON: $JSON_COUNT"
+          fi
+          
+          # Check file contents
+          if [ $XML_COUNT -gt 0 ]; then
+            echo "Checking first XML file structure:"
+            FIRST_XML=$(find $SOURCE_DIR -name "*.xml" | head -1)
+            head -20 "$FIRST_XML"
           fi
 
-      - name: Install dependencies
+      - name: Install Java and Allure
         run: |
-          # Update package list
+          # Update and install Java
           sudo apt-get update
+          sudo apt-get install -y openjdk-17-jre curl unzip
           
-          # Install Java 17 (Allure 2.24.0 works better with Java 17)
-          sudo apt-get install -y openjdk-17-jre
-          
-          # Install curl and unzip
-          sudo apt-get install -y curl unzip
-          
-          # Verify Java installation
-          echo "Java version:"
-          java -version
-
-      - name: Install Allure
-        run: |
-          # Download Allure
-          echo "Downloading Allure 2.24.0..."
+          # Download and install Allure
           curl -L -o allure-2.24.0.zip https://github.com/allure-framework/allure2/releases/download/2.24.0/allure-2.24.0.zip
-          
-          # Extract Allure
           unzip -q allure-2.24.0.zip -d /opt/
-          
-          # Create symlink
           sudo ln -sf /opt/allure-2.24.0/bin/allure /usr/local/bin/allure
           
-          # Verify installation
+          # Verify
+          echo "Java version:"
+          java -version
           echo "Allure version:"
           /opt/allure-2.24.0/bin/allure --version
 
       - name: Generate Allure Reports
-        id: generate_report
+        id: generate
         run: |
-          # Check if we have any test result files
-          echo "Checking for test files in $SOURCE_DIR..."
+          echo "Generating Allure reports from: $SOURCE_DIR"
           
-          XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
-          JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
-          TOTAL_FILES=$((XML_COUNT + JSON_COUNT))
+          # Clean previous reports
+          rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
+          mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
           
-          echo "Found $XML_COUNT XML files and $JSON_COUNT JSON files"
+          # Check if we have test files
+          if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
+            echo "Found test files, generating reports..."
           
-          if [ $TOTAL_FILES -gt 0 ]; then
-            echo "✅ Found test result files, generating reports..."
+            # **CRITICAL FIX: Use correct Allure syntax and paths**
+            # First, let's see what allure sees
+            echo "Allure report list (to see what it can parse):"
+            /opt/allure-2.24.0/bin/allure report list $SOURCE_DIR || echo "Allure list command failed"
           
-            # Clean output directories
-            rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
-            mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
+            # Generate multi-file report
+            echo "Generating multi-file report..."
+            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR --output $OUTPUT_DIR --clean
           
-            # Generate multi-file report FIRST
-            echo "Step 1: Generating multi-file report..."
-            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR -o $OUTPUT_DIR --clean
+            # Generate single-file report
+            echo "Generating single-file report..."
+            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR --output $SINGLE_FILE_DIR --single-file --clean
           
-            # Check if multi-file report was generated
+            # Check results
             if [ -f "$OUTPUT_DIR/index.html" ]; then
-              echo "✅ Multi-file report generated successfully"
-              echo "Multi-file report size: $(du -sh $OUTPUT_DIR)"
-          
-              # Count widgets in the report
-              if [ -d "$OUTPUT_DIR/data" ]; then
-                WIDGET_COUNT=$(ls -1 "$OUTPUT_DIR/data"/*.json 2>/dev/null | wc -l)
-                echo "Widgets in report: $WIDGET_COUNT"
-              fi
+              echo "✅ Multi-file report generated"
+              echo "REPORT_GENERATED=true" >> $GITHUB_OUTPUT
             else
-              echo "❌ Multi-file report generation failed"
-              echo "Contents of $OUTPUT_DIR:"
-              ls -la $OUTPUT_DIR/
+              echo "❌ Multi-file report failed"
+              echo "REPORT_GENERATED=false" >> $GITHUB_OUTPUT
             fi
-          
-            # Generate single-file report SECOND (from fresh source)
-            echo ""
-            echo "Step 2: Generating single-file report..."
-            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR -o $SINGLE_FILE_DIR --single-file --clean
-          
-            # Check if single-file report was generated
-            SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
-            if [ -n "$SINGLE_FILE" ]; then
-              echo "✅ Single-file report generated: $SINGLE_FILE"
-              echo "Single-file size: $(du -h "$SINGLE_FILE" | cut -f1)"
-            else
-              echo "❌ Single-file report generation failed"
-              echo "Contents of $SINGLE_FILE_DIR:"
-              ls -la $SINGLE_FILE_DIR/
-            fi
-          
-            echo "HAS_REPORT=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ No test result files found"
-            echo "Contents of source directory:"
-            find $SOURCE_DIR -type f | head -20
-            echo "HAS_REPORT=false" >> $GITHUB_OUTPUT
+            echo "❌ No test files found"
+            echo "REPORT_GENERATED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Debug: Show generated files
+          echo "Generated files in $OUTPUT_DIR:"
+          find $OUTPUT_DIR -type f | head -20 || echo "No files"
+          
+          echo "Generated files in $SINGLE_FILE_DIR:"
+          find $SINGLE_FILE_DIR -type f | head -20 || echo "No files"
+
+      - name: Fix Empty Reports - Alternative Approach
+        if: steps.generate.outputs.REPORT_GENERATED == 'true'
+        run: |
+          # If reports are generated but empty, try a different approach
+          echo "Checking if reports have content..."
+          
+          # Check multi-file report size
+          if [ -f "$OUTPUT_DIR/index.html" ]; then
+            SIZE=$(wc -c < "$OUTPUT_DIR/index.html")
+            echo "Multi-file index.html size: $SIZE bytes"
+          
+            if [ $SIZE -lt 10000 ]; then
+              echo "⚠️ Multi-file report seems small, trying alternative generation..."
+          
+              # Try with a different Allure command format
+              cd $SOURCE_DIR
+              /opt/allure-2.24.0/bin/allure generate . --output ../$OUTPUT_DIR --clean
+              cd -
+            fi
+          fi
+          
+          # Check for single-file report
+          SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
+          if [ -n "$SINGLE_FILE" ]; then
+            SINGLE_SIZE=$(wc -c < "$SINGLE_FILE")
+            echo "Single-file report size: $SINGLE_SIZE bytes"
+          
+            if [ $SINGLE_SIZE -lt 10000 ]; then
+              echo "⚠️ Single-file report seems small..."
+            fi
           fi
 
       - name: Upload Reports to S3
-        if: steps.generate_report.outputs.HAS_REPORT == 'true'
+        if: steps.generate.outputs.REPORT_GENERATED == 'true'
         run: |
-          # Define report paths
-          REPORT_BASE_PATH="Report/consul/${{ steps.setup.outputs.TIMESTAMP_PATH }}"
+          REPORT_BASE_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
           
-          echo "Uploading reports to S3..."
-          echo "Base path: $REPORT_BASE_PATH"
+          echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
           
-          # Clean previous reports in S3
-          echo "Cleaning previous reports..."
+          # Clean existing reports
           aws s3 rm "s3://$S3_BUCKET/$REPORT_BASE_PATH/" --recursive --quiet || true
           
-          # Upload multi-file report
-          echo "Uploading multi-file report..."
+          # Upload multi-file report if it exists
           if [ -f "$OUTPUT_DIR/index.html" ]; then
-            aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/multi-file/" \
-              --quiet
-            echo "✅ Multi-file report uploaded"
-          else
-            echo "❌ Multi-file report not found, skipping upload"
+            echo "Uploading multi-file report..."
+            aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/multi-file/" --quiet
+            MULTI_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/multi-file/index.html"
+            echo "MULTI_URL=$MULTI_URL" >> $GITHUB_ENV
           fi
           
-          # Upload single file report
-          echo "Uploading single-file report..."
-          SINGLE_FILE=$(find "$SINGLE_FILE_DIR" -name "*.html" | head -1)
+          # Upload single-file report
+          SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
           if [ -n "$SINGLE_FILE" ]; then
-            SINGLE_FILE_NAME="allure-report-${{ steps.setup.outputs.SAFE_ID }}.html"
-            echo "Uploading as: $SINGLE_FILE_NAME"
+            SINGLE_NAME="allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
+            echo "Uploading single-file as: $SINGLE_NAME"
           
-            # Copy the file with new name
-            cp "$SINGLE_FILE" "$SINGLE_FILE_DIR/$SINGLE_FILE_NAME"
+            # Copy and rename
+            cp "$SINGLE_FILE" "$SINGLE_FILE_DIR/$SINGLE_NAME"
+            aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_NAME" --quiet
           
-            # Upload to S3
-            aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_FILE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_FILE_NAME" \
-              --quiet
-          
-            # Generate download URL
-            SINGLE_FILE_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/$SINGLE_FILE_NAME"
-            echo "SINGLE_FILE_URL=$SINGLE_FILE_URL" >> $GITHUB_ENV
-            echo "✅ Single-file report uploaded"
-          else
-            echo "❌ Single-file report not found"
+            SINGLE_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/$SINGLE_NAME"
+            echo "SINGLE_URL=$SINGLE_URL" >> $GITHUB_ENV
           fi
           
-          # Create report URL for multi-file
-          REPORT_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/multi-file/index.html"
-          echo "REPORT_URL=$REPORT_URL" >> $GITHUB_ENV
-          
-          # Create a status file
-          STATUS_FILE="./upload-status.json"
-          cat > "$STATUS_FILE" << EOF
-          {
-            "status": "success",
-            "timestamp": "${{ steps.setup.outputs.TIMESTAMP_PATH }}",
-            "source_directory": "${{ steps.setup.outputs.S3_DIR }}",
-            "files_found": $TOTAL_FILES,
-            "multi_file_report": "$(if [ -f "$OUTPUT_DIR/index.html" ]; then echo "true"; else echo "false"; fi)",
-            "single_file_report": "$(if [ -n "$(find $SINGLE_FILE_DIR -name '*.html' | head -1)" ]; then echo "true"; else echo "false"; fi)",
-            "multi_file_url": "$REPORT_URL",
-            "single_file_url": "$SINGLE_FILE_URL",
-            "generated_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          }
-          EOF
-          
-          aws s3 cp "$STATUS_FILE" "s3://$S3_BUCKET/$REPORT_BASE_PATH/status.json"
-          
+          # Create a test file to verify upload
+          echo "Test upload successful at $(date)" > upload-test.txt
+          aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
+
+      - name: Debug Allure Results
+        if: always()
+        run: |
+          echo "=== DEBUG INFORMATION ==="
           echo ""
-          echo "📊 Upload Summary:"
-          echo "Multi-file: $(if [ -f "$OUTPUT_DIR/index.html" ]; then echo '✅'; else echo '❌'; fi)"
-          echo "Single-file: $(if [ -n "$(find $SINGLE_FILE_DIR -name '*.html' | head -1)" ]; then echo '✅'; else echo '❌'; fi)"
+          echo "1. Source directory contents ($SOURCE_DIR):"
+          ls -la $SOURCE_DIR/
+          echo ""
+          
+          echo "2. XML files found:"
+          find $SOURCE_DIR -name "*.xml" -exec echo "  - {}" \;
+          echo ""
+          
+          echo "3. First XML file sample:"
+          if [ -n "$(find $SOURCE_DIR -name '*.xml' | head -1)" ]; then
+            FIRST_XML=$(find $SOURCE_DIR -name "*.xml" | head -1)
+            echo "File: $FIRST_XML"
+            echo "First 5 lines:"
+            head -5 "$FIRST_XML"
+            echo ""
+            echo "Does it contain 'test-case' or 'testsuite'?"
+            grep -i "test-case\|testsuite\|testcase" "$FIRST_XML" | head -3 || echo "  No test-case/testsuite tags found"
+          fi
+          echo ""
+          
+          echo "4. Allure version and capabilities:"
+          /opt/allure-2.24.0/bin/allure --version
+          echo ""
+          
+          echo "5. Try Allure validation:"
+          /opt/allure-2.24.0/bin/allure validate $SOURCE_DIR || echo "Allure validation failed"
 
       - name: Create Artifacts
-        if: steps.generate_report.outputs.HAS_REPORT == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: consul-report-${{ steps.setup.outputs.SAFE_ID }}
+          name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
           path: |
-            ${{ env.OUTPUT_DIR }}
-            ${{ env.SINGLE_FILE_DIR }}
-            ${{ env.SOURCE_DIR }}
+            $SOURCE_DIR/
+            $OUTPUT_DIR/
+            $SINGLE_FILE_DIR/
           retention-days: 7
 
       - name: Output Results
         run: |
           echo ""
           echo "========================================"
-          echo "📋 ALLURE REPORT GENERATION SUMMARY"
+          echo "RESULTS SUMMARY"
           echo "========================================"
           echo ""
-          echo "Workflow: ${{ github.workflow }}"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Source: ${{ steps.setup.outputs.S3_DIR }}"
+          echo "Source: ${{ steps.parse_path.outputs.S3_DIR }}"
+          echo "Test files: ${{ steps.download.outputs.XML_FILES }} XML, ${{ steps.download.outputs.JSON_FILES }} JSON"
           echo ""
           
-          if [ "${{ steps.generate_report.outputs.HAS_REPORT }}" = "true" ]; then
-            echo "✅ REPORT GENERATION COMPLETE"
+          if [ "${{ steps.generate.outputs.REPORT_GENERATED }}" = "true" ]; then
+            echo "✅ REPORTS GENERATED"
             echo ""
           
-            # Check multi-file report
-            if [ -f "$OUTPUT_DIR/index.html" ]; then
-              echo "📊 MULTI-FILE REPORT: AVAILABLE"
-              echo "   URL: ${{ env.REPORT_URL }}"
-              echo "   Local: $OUTPUT_DIR/index.html"
-              echo "   Size: $(du -sh $OUTPUT_DIR | cut -f1)"
-            else
-              echo "❌ MULTI-FILE REPORT: FAILED"
+            if [ -n "${{ env.MULTI_URL }}" ]; then
+              echo "📊 Multi-file report:"
+              echo "   ${{ env.MULTI_URL }}"
             fi
           
-            echo ""
-          
-            # Check single-file report
-            SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
-            if [ -n "$SINGLE_FILE" ]; then
-              echo "📥 SINGLE-FILE REPORT: AVAILABLE"
-              echo "   URL: ${{ env.SINGLE_FILE_URL }}"
-              echo "   File: $(basename $SINGLE_FILE)"
-              echo "   Size: $(du -h "$SINGLE_FILE" | cut -f1)"
-            else
-              echo "❌ SINGLE-FILE REPORT: FAILED"
+            if [ -n "${{ env.SINGLE_URL }}" ]; then
+              echo ""
+              echo "📥 Single-file report:"
+              echo "   ${{ env.SINGLE_URL }}"
+              echo ""
+              echo "Download command:"
+              echo "curl -LO '${{ env.SINGLE_URL }}'"
             fi
-          
-            echo ""
-            echo "🔗 DIRECT DOWNLOAD COMMANDS:"
-            echo "curl -LO '${{ env.SINGLE_FILE_URL }}'"
-            echo ""
-            echo "📁 S3 LOCATION:"
-            echo "s3://$S3_BUCKET/Report/consul/${{ steps.setup.outputs.TIMESTAMP_PATH }}/"
-          
           else
-            echo "⚠️ NO REPORTS GENERATED"
+            echo "❌ REPORTS FAILED"
             echo ""
-            echo "Possible issues:"
-            echo "1. No test files found in S3 directory"
-            echo "2. Downloaded files are not in Allure format"
-            echo "3. Check the 'Download test results from S3' step for details"
-            echo ""
-            echo "Debug commands:"
-            echo "aws s3 ls s3://$S3_BUCKET/${{ steps.setup.outputs.S3_DIR }}/ --recursive"
-          fi
-
-      - name: Verify Reports
-        if: steps.generate_report.outputs.HAS_REPORT == 'true'
-        run: |
-          echo "🔍 VERIFYING GENERATED REPORTS"
-          echo "=============================="
-          
-          # Check multi-file report structure
-          echo ""
-          echo "Multi-file report structure ($OUTPUT_DIR):"
-          if [ -d "$OUTPUT_DIR" ]; then
-            find "$OUTPUT_DIR" -type f -name "*.html" -o -name "*.json" | head -10
-            echo "Total files: $(find "$OUTPUT_DIR" -type f | wc -l)"
-          
-            # Check for essential files
-            echo ""
-            echo "Essential files check:"
-            [ -f "$OUTPUT_DIR/index.html" ] && echo "✅ index.html exists" || echo "❌ index.html missing"
-            [ -d "$OUTPUT_DIR/data" ] && echo "✅ data/ directory exists" || echo "❌ data/ directory missing"
-            [ -d "$OUTPUT_DIR/plugins" ] && echo "✅ plugins/ directory exists" || echo "❌ plugins/ directory missing"
-          fi
-          
-          # Check single-file report
-          echo ""
-          echo "Single-file report ($SINGLE_FILE_DIR):"
-          if [ -d "$SINGLE_FILE_DIR" ]; then
-            find "$SINGLE_FILE_DIR" -type f | head -10
-            SINGLE_FILE=$(find "$SINGLE_FILE_DIR" -name "*.html" | head -1)
-            if [ -n "$SINGLE_FILE" ]; then
-              echo "Single file size: $(wc -c < "$SINGLE_FILE") bytes"
-              # Check if file has content
-              if [ $(wc -c < "$SINGLE_FILE") -gt 1000 ]; then
-                echo "✅ Single-file has sufficient content"
-              else
-                echo "⚠️ Single-file might be empty or too small"
-              fi
-            fi
+            echo "Check the 'Debug Allure Results' step for details."
+            echo "Common issues:"
+            echo "1. XML files not in Allure format"
+            echo "2. Missing required XML structure"
+            echo "3. Allure compatibility issue"
           fi
