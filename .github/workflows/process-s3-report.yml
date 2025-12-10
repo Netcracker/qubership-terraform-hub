@@ -138,9 +138,15 @@ jobs:
             echo "Generating multi-file report..."
             /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR/allure-results/ --output $OUTPUT_DIR --clean
           
+            echo "Generated files in $OUTPUT_DIR:"
+            ls $OUTPUT_DIR
+          
             # Generate single-file report
             echo "Generating single-file report..."
             /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR/allure-results/ --output $SINGLE_FILE_DIR --single-file --clean
+          
+            echo "Generated files in $SINGLE_FILE_DIR
+            ls $SINGLE_FILE_DIR
           
             # Check results
             if [ -f "$OUTPUT_DIR/index.html" ]; then
