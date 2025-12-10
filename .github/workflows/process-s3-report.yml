@@ -134,12 +134,12 @@ jobs:
           if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
             echo "Found test files, generating reports..."
             pwd
-            mkdir -p ./allure-results-debug
-            cp $SOURCE_DIR/allure-results/* ./allure-results-debug/
+            mkdir -p /home/runner/work/qubership-terraform-hub/qubership-terraform-hub/allure-results-debug
+            cp $SOURCE_DIR/allure-results/* /home/runner/work/qubership-terraform-hub/qubership-terraform-hub/allure-results-debug/
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.24.0/bin/allure generate ./allure-results-debug/ -o $OUTPUT_DIR -c 
+            /opt/allure-2.24.0/bin/allure generate /home/runner/work/qubership-terraform-hub/qubership-terraform-hub/allure-results-debug/ -o $OUTPUT_DIR -c 
           
             echo "Generated files in $OUTPUT_DIR"
             ls $OUTPUT_DIR
