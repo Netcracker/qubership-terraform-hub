@@ -34,7 +34,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -52,6 +52,7 @@ jobs:
         run: pip install boto3 requests
 
       - name: Run processing script
+        id: process
         env:
           TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
           SOURCE_BUCKET: ${{ github.event.inputs.source_bucket || env.SOURCE_BUCKET }}
