@@ -133,7 +133,7 @@ jobs:
           # Check if we have test files
           if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
             echo "Found test files, generating reports..."
-          
+            pwd
             mkdir -p ./allure-results-debug
             cp $SOURCE_DIR/allure-results/* ./allure-results-debug/
           
