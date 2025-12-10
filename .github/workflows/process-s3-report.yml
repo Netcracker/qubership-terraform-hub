@@ -111,15 +111,15 @@ jobs:
           sudo apt-get install -y openjdk-17-jre curl unzip
           
           # Download and install Allure
-          curl -L -o allure-2.24.0.zip https://github.com/allure-framework/allure2/releases/download/2.24.0/allure-2.24.0.zip
-          unzip -q allure-2.24.0.zip -d /opt/
-          sudo ln -sf /opt/allure-2.24.0/bin/allure /usr/local/bin/allure
+          curl -L -o allure-2.35.1.zip https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip
+          unzip -q allure-2.35.1.zip -d /opt/
+          sudo ln -sf /opt/allure-2.35.1/bin/allure /usr/local/bin/allure
           
           # Verify
           echo "Java version:"
           java -version
           echo "Allure version:"
-          /opt/allure-2.24.0/bin/allure --version
+          /opt/allure-2.35.1/bin/allure --version
 
       - name: Generate Allure Reports
         id: generate
@@ -139,14 +139,14 @@ jobs:
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.24.0/bin/allure generate /home/runner/work/qubership-terraform-hub/qubership-terraform-hub/allure-results-debug/ -o $OUTPUT_DIR -c 
+            /opt/allure-2.35.1/bin/allure generate /home/runner/work/qubership-terraform-hub/qubership-terraform-hub/allure-results-debug/ -o $OUTPUT_DIR -c 
           
             echo "Generated files in $OUTPUT_DIR"
             ls $OUTPUT_DIR
           
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR/allure-results/ -o $SINGLE_FILE_DIR --clean --single-file 
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $SINGLE_FILE_DIR --clean --single-file 
           
             echo "Generated files in $SINGLE_FILE_DIR"
             ls $SINGLE_FILE_DIR
@@ -187,7 +187,7 @@ jobs:
           
               # Try with a different Allure command format
               cd $SOURCE_DIR
-              /opt/allure-2.24.0/bin/allure generate . --output ../$OUTPUT_DIR --clean
+              /opt/allure-2.35.1/bin/allure generate . --output ../$OUTPUT_DIR --clean
               cd -
             fi
           fi
@@ -265,11 +265,11 @@ jobs:
           echo ""
           
           echo "4. Allure version and capabilities:"
-          /opt/allure-2.24.0/bin/allure --version
+          /opt/allure-2.35.1/bin/allure --version
           echo ""
           
           echo "5. Try Allure validation:"
-          /opt/allure-2.24.0/bin/allure validate $SOURCE_DIR || echo "Allure validation failed"
+          /opt/allure-2.35.1/bin/allure validate $SOURCE_DIR || echo "Allure validation failed"
 
       - name: Create Artifacts
         if: always()
