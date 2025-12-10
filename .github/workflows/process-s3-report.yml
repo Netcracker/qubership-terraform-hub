@@ -134,18 +134,13 @@ jobs:
           if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
             echo "Found test files, generating reports..."
           
-            # **CRITICAL FIX: Use correct Allure syntax and paths**
-            # First, let's see what allure sees
-            echo "Allure report list (to see what it can parse):"
-            /opt/allure-2.24.0/bin/allure report list $SOURCE_DIR || echo "Allure list command failed"
-          
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR --output $OUTPUT_DIR --clean
+            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR/allure-results/ --output $OUTPUT_DIR --clean
           
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR --output $SINGLE_FILE_DIR --single-file --clean
+            /opt/allure-2.24.0/bin/allure generate $SOURCE_DIR/allure-results/ --output $SINGLE_FILE_DIR --single-file --clean
           
             # Check results
             if [ -f "$OUTPUT_DIR/index.html" ]; then
