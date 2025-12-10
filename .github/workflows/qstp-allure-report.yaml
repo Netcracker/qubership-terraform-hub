@@ -49,18 +49,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install boto3 requests urllib3
-
-      - name: Create processing script
-        run: |
-          mkdir -p .github/scripts
-          
-          cat > .github/scripts/process_allure_folders.py << 'EOF'
-          <PASTE THE ENTIRE PYTHON SCRIPT ABOVE HERE>
-          EOF
-          
-          # Make script executable
-          chmod +x .github/scripts/process_allure_folders.py
+        run: pip install boto3 requests
 
       - name: Run processing script
         id: process
@@ -73,33 +62,27 @@ jobs:
           PROJECT_ID: ${{ env.PROJECT_ID }}
           ALLURE_USERNAME: ${{ secrets.ALLURE_USERNAME }}
           ALLURE_PASSWORD: ${{ secrets.ALLURE_PASSWORD }}
-        run: |
-          echo "Starting processing script with SSL verification disabled..."
-          echo "Target date: $TARGET_DATE"
-          echo "Source bucket: $SOURCE_BUCKET"
-          echo "Destination bucket: $DEST_BUCKET"
-          echo "Allure URL: $ALLURE_URL"
+        run: |          
+          # Run the script
           python allure-report/process_s3_folders.py
           
           # Check if reports were generated
-          if [ -f "allure_reports_list.txt" ]; then
-            echo "Reports generated successfully!"
-            echo "::set-output name=has_reports::true"
+          if [ -f "${{ github.workspace }}/allure_reports_list.txt" ]; then
+            echo "Reports were generated successfully"
+            cat "${{ github.workspace }}/allure_reports_list.txt"
           else
             echo "No reports were generated"
-            echo "::set-output name=has_reports::false"
           fi
 
       - name: Upload Allure Reports as Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: allure-reports
           path: |
-            allure_reports_list.txt
+            ${{ github.workspace }}/allure_reports_list.txt
             /tmp/allure_reports_*/
           retention-days: 30
-          if-no-files-found: warn
 
       - name: Create Processing Summary
         if: always()
@@ -110,32 +93,14 @@ jobs:
           echo "**Source Bucket:** ${{ env.SOURCE_BUCKET }}" >> $GITHUB_STEP_SUMMARY
           echo "**Temporary Bucket:** ${{ env.DESTINATION_BUCKET }}" >> $GITHUB_STEP_SUMMARY
           echo "**Allure Project:** ${{ env.PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
-          echo "**SSL Verification:** Disabled (self-signed certificate)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "allure_reports_list.txt" ]; then
+          if [ -f "${{ github.workspace }}/allure_reports_list.txt" ]; then
             echo "### Generated Reports" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            report_count=0
             while IFS= read -r line; do
-              if [ -f "$line" ]; then
-                filename=$(basename "$line")
-                size=$(stat -c%s "$line" 2>/dev/null || echo "unknown")
-                echo "- \`$filename\` (${size} bytes)" >> $GITHUB_STEP_SUMMARY
-                report_count=$((report_count + 1))
-              fi
-            done < "allure_reports_list.txt"
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Total reports:** $report_count" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Reports are available as workflow artifacts." >> $GITHUB_STEP_SUMMARY
+              echo "- $(basename "$line")" >> $GITHUB_STEP_SUMMARY
+            done < "${{ github.workspace }}/allure_reports_list.txt"
           else
             echo "No reports were generated during this run." >> $GITHUB_STEP_SUMMARY
           fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Workflow Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Completed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
