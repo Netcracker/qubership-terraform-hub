@@ -131,11 +131,11 @@ jobs:
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.24.0/bin/allure generate ./s3-data/ -o "$OUTPUT_DIR" --clean
+            /opt/allure-2.24.0/bin/allure generate ./s3-data/allure-results/ -o "$OUTPUT_DIR" --clean
           
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.24.0/bin/allure generate ./s3-data/ -o "$SINGLE_FILE_DIR" --single-file --clean
+            /opt/allure-2.24.0/bin/allure generate ./s3-data/allure-results/ -o "$SINGLE_FILE_DIR" --single-file --clean
           
             # Check if reports were generated
             if [ -f "$OUTPUT_DIR/index.html" ]; then
