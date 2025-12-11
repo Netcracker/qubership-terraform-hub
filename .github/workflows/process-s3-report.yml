@@ -172,38 +172,6 @@ jobs:
           echo "Generated files in $SINGLE_FILE_DIR:"
           find $SINGLE_FILE_DIR -type f | head -20 || echo "No files"
 
-      - name: Fix Empty Reports - Alternative Approach
-        if: steps.generate.outputs.REPORT_GENERATED == 'true'
-        run: |
-          # If reports are generated but empty, try a different approach
-          echo "Checking if reports have content..."
-          
-          # Check multi-file report size
-          if [ -f "$OUTPUT_DIR/index.html" ]; then
-            SIZE=$(wc -c < "$OUTPUT_DIR/index.html")
-            echo "Multi-file index.html size: $SIZE bytes"
-          
-            if [ $SIZE -lt 10000 ]; then
-              echo "⚠️ Multi-file report seems small, trying alternative generation..."
-          
-              # Try with a different Allure command format
-              cd $SOURCE_DIR
-              /opt/allure-2.35.1/bin/allure generate . --output ../$OUTPUT_DIR --clean
-              cd -
-            fi
-          fi
-          
-          # Check for single-file report
-          SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
-          if [ -n "$SINGLE_FILE" ]; then
-            SINGLE_SIZE=$(wc -c < "$SINGLE_FILE")
-            echo "Single-file report size: $SINGLE_SIZE bytes"
-          
-            if [ $SINGLE_SIZE -lt 10000 ]; then
-              echo "⚠️ Single-file report seems small..."
-            fi
-          fi
-
       - name: Upload Reports to S3
         if: steps.generate.outputs.REPORT_GENERATED == 'true'
         run: |
@@ -217,8 +185,8 @@ jobs:
           # Upload multi-file report if it exists
           if [ -f "$OUTPUT_DIR/index.html" ]; then
             echo "Uploading multi-file report..."
-            aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/multi-file/" --quiet
-            MULTI_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/multi-file/index.html"
+            aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/allure-report/" --quiet
+            MULTI_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/allure-report/index.html"
             echo "MULTI_URL=$MULTI_URL" >> $GITHUB_ENV
           fi
           
@@ -239,38 +207,6 @@ jobs:
           # Create a test file to verify upload
           echo "Test upload successful at $(date)" > upload-test.txt
           aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
-
-      - name: Debug Allure Results
-        if: always()
-        run: |
-          echo "=== DEBUG INFORMATION ==="
-          echo ""
-          echo "1. Source directory contents ($SOURCE_DIR):"
-          ls -la $SOURCE_DIR/
-          echo ""
-          
-          echo "2. XML files found:"
-          find $SOURCE_DIR -name "*.xml" -exec echo "  - {}" \;
-          echo ""
-          
-          echo "3. First XML file sample:"
-          if [ -n "$(find $SOURCE_DIR -name '*.xml' | head -1)" ]; then
-            FIRST_XML=$(find $SOURCE_DIR -name "*.xml" | head -1)
-            echo "File: $FIRST_XML"
-            echo "First 5 lines:"
-            head -5 "$FIRST_XML"
-            echo ""
-            echo "Does it contain 'test-case' or 'testsuite'?"
-            grep -i "test-case\|testsuite\|testcase" "$FIRST_XML" | head -3 || echo "  No test-case/testsuite tags found"
-          fi
-          echo ""
-          
-          echo "4. Allure version and capabilities:"
-          /opt/allure-2.35.1/bin/allure --version
-          echo ""
-          
-          echo "5. Try Allure validation:"
-          /opt/allure-2.35.1/bin/allure validate $SOURCE_DIR || echo "Allure validation failed"
 
       - name: Create Artifacts
         if: always()
