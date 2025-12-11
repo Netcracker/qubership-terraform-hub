@@ -134,10 +134,13 @@ jobs:
           if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
             echo "Found test files, generating reports..."
             pwd
+            echo "Debug contents of allure-results"
+            echo "$SOURCE_DIR"
+            ls $SOURCE_DIR/allure-results/
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $OUTPUT_DIR --clean
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $OUTPUT_DIR/ --clean
           
             echo "Generated files in $OUTPUT_DIR"
             ls $OUTPUT_DIR
