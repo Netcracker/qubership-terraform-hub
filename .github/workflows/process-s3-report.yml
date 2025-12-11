@@ -1,4 +1,4 @@
-name: Process Allure Test Results
+name: Process Consul Test Results
 
 on:
   workflow_dispatch:
@@ -6,17 +6,16 @@ on:
       s3_directory:
         description: 'S3 Directory Path (e.g., Result/consul/2025-12-10/00-42-50/)'
         required: true
+        default: 'Result/consul/2025-12-10/00-42-50'
         type: string
   repository_dispatch:
     types: [s3-new-consul-directory]
-  #schedule:
-    # Optional: Run every 30 minutes to check for new results
-    #- cron: '*/30 * * * *'
 
 env:
   S3_BUCKET: qstp-consul
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
+  SOURCE_DIR: ./allure-results
 
 jobs:
   generate-allure-report:
@@ -34,20 +33,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Parse S3 directory path
+      - name: Parse S3 path
         id: parse_path
         run: |
+          # Parse S3 directory from input
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             S3_DIR="${{ github.event.inputs.s3_directory }}"
+            echo "Using manual input: $S3_DIR"
           elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             S3_DIR="${{ github.event.client_payload.directory }}"
+            echo "Using repository dispatch: $S3_DIR"
           else
-            # For scheduled runs, find latest directory
-            S3_DIR=$(aws s3 ls "s3://$S3_BUCKET/Result/consul/" --recursive | grep '/$' | sort -r | head -1 | awk '{print $4}' | sed 's/\/$//')
-            if [ -z "$S3_DIR" ]; then
-              echo "No directories found"
-              exit 0
-            fi
+            echo "Unknown trigger"
+            exit 1
           fi
           
           # Remove trailing slash if present
@@ -55,194 +53,206 @@ jobs:
           echo "S3_DIR=$S3_DIR" >> $GITHUB_OUTPUT
           
           # Extract timestamp path for report
-          # Convert Result/consul/2025-12-10/00-42-50/ to 2025-12-10/00-42-50
           TIMESTAMP_PATH=$(echo "$S3_DIR" | sed 's|^Result/consul/||')
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
           
-          # Extract date and time separately
-          DATE_PART=$(echo "$TIMESTAMP_PATH" | cut -d'/' -f1)
-          TIME_PART=$(echo "$TIMESTAMP_PATH" | cut -d'/' -f2)
-          echo "DATE=$DATE_PART" >> $GITHUB_OUTPUT
-          echo "TIME=$TIME_PART" >> $GITHUB_OUTPUT
-          
           # Create safe identifier
-          SAFE_ID="${DATE_PART}_${TIME_PART}"
+          SAFE_ID=$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
           
-          echo "Parsed path: $S3_DIR"
-          echo "Timestamp path: $TIMESTAMP_PATH"
-          echo "Safe ID: $SAFE_ID"
+          echo "Parsed: $S3_DIR → Report/consul/$TIMESTAMP_PATH"
 
-      - name: Check if report already exists
-        id: check_report
+      - name: Download Allure results from S3
+        id: download
         run: |
-          REPORT_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}/"
-          echo "Checking if report exists at: $REPORT_PATH"
+          echo "Downloading from: s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/"
+          mkdir -p $SOURCE_DIR
           
-          # Check if multi-file report exists
-          if aws s3 ls "s3://$S3_BUCKET/$REPORT_PATH" --recursive | head -1; then
-            echo "Report already exists"
-            echo "EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "EXISTS=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download test results from S3
-        if: steps.check_report.outputs.EXISTS == 'false'
-        run: |
-          echo "Downloading test results from: s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/"
-          mkdir -p ./s3-data
-          aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" ./s3-data/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+          # First, check what's in S3
+          echo "Listing S3 contents:"
+          aws s3 ls "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" --recursive || true
           
-          # List downloaded files
+          # Download ALL files from the S3 directory (including subdirectories)
+          echo "Downloading files..."
+          aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+          
+          # Check what was downloaded
           echo "Downloaded files:"
-          find ./s3-data -type f | head -20
-          echo "Total files: $(find ./s3-data -type f | wc -l)"
+          find $SOURCE_DIR -type f | sort
           
-          # Check if we have any test files
-          if [ ! "$(find ./s3-data -type f -name '*.xml' -o -name '*.json')" ]; then
-            echo "No test result files found"
-            exit 1
+          # Count files
+          XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
+          JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
+          echo "XML_FILES=$XML_COUNT" >> $GITHUB_OUTPUT
+          echo "JSON_FILES=$JSON_COUNT" >> $GITHUB_OUTPUT
+          echo "Total files downloaded: $(find $SOURCE_DIR -type f | wc -l)"
+          
+          # If no files, try downloading everything
+          if [ $XML_COUNT -eq 0 ] && [ $JSON_COUNT -eq 0 ]; then
+            echo "No XML/JSON files found with filters, downloading everything..."
+            aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/
+          
+            XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
+            JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
+            echo "After full sync - XML: $XML_COUNT, JSON: $JSON_COUNT"
+          fi
+          
+          # Check file contents
+          if [ $XML_COUNT -gt 0 ]; then
+            echo "Checking first XML file structure:"
+            FIRST_XML=$(find $SOURCE_DIR -name "*.xml" | head -1)
+            head -20 "$FIRST_XML"
           fi
 
-      - name: Install Allure
-        if: steps.check_report.outputs.EXISTS == 'false'
+      - name: Install Java and Allure
         run: |
-          # Install Java (required for Allure)
+          # Update and install Java
           sudo apt-get update
-          sudo apt-get install -y openjdk-11-jre
+          sudo apt-get install -y openjdk-17-jre curl unzip
           
           # Download and install Allure
-          curl -Lo allure-2.24.0.tgz https://github.com/allure-framework/allure2/releases/download/2.24.0/allure-2.24.0.tgz
-          sudo tar -zxvf allure-2.24.0.tgz -C /opt/
-          sudo ln -sf /opt/allure-2.24.0/bin/allure /usr/bin/allure
+          curl -L -o allure-2.35.1.zip https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip
+          unzip -q allure-2.35.1.zip -d /opt/
+          sudo ln -sf /opt/allure-2.35.1/bin/allure /usr/local/bin/allure
           
-          # Verify installation
-          allure --version
-          
-          # Also install allure command line via npm (alternative)
-          sudo apt-get install -y npm
-          sudo npm install -g allure-commandline
+          # Verify
+          echo "Java version:"
+          java -version
+          echo "Allure version:"
+          /opt/allure-2.35.1/bin/allure --version
 
-      - name: Generate Allure Report (Multi-file)
-        if: steps.check_report.outputs.EXISTS == 'false'
+      - name: Generate Allure Reports
+        id: generate
         run: |
-          echo "Generating multi-file Allure report..."
-          allure generate ./s3-data/ -o "$OUTPUT_DIR" --clean
+          echo "Generating Allure reports from: $SOURCE_DIR"
           
-          # Check if report was generated
+          # Clean previous reports
+          rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
+          mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
+          
+          # Check if we have test files
+          if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
+            echo "Found test files, generating reports..."
+            pwd
+            echo "Debug contents of allure-results"
+            echo "$SOURCE_DIR"
+            ls $SOURCE_DIR/allure-results/
+          
+            # Generate multi-file report
+            echo "Generating multi-file report..."
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $OUTPUT_DIR/ --clean
+          
+            echo "Generated files in $OUTPUT_DIR"
+            ls $OUTPUT_DIR
+          
+            # Generate single-file report
+            echo "Generating single-file report..."
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $SINGLE_FILE_DIR --clean --single-file 
+          
+            echo "Generated files in $SINGLE_FILE_DIR"
+            ls $SINGLE_FILE_DIR
+          
+            # Check results
+            if [ -f "$OUTPUT_DIR/index.html" ]; then
+              echo "✅ Multi-file report generated"
+              echo "REPORT_GENERATED=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Multi-file report failed"
+              echo "REPORT_GENERATED=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "❌ No test files found"
+            echo "REPORT_GENERATED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Debug: Show generated files
+          echo "Generated files in $OUTPUT_DIR:"
+          find $OUTPUT_DIR -type f | head -20 || echo "No files"
+          
+          echo "Generated files in $SINGLE_FILE_DIR:"
+          find $SINGLE_FILE_DIR -type f | head -20 || echo "No files"
+
+      - name: Upload Reports to S3
+        if: steps.generate.outputs.REPORT_GENERATED == 'true'
+        run: |
+          REPORT_BASE_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
+          
+          echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
+          
+          # Clean existing reports
+          aws s3 rm "s3://$S3_BUCKET/$REPORT_BASE_PATH/" --recursive --quiet || true
+          
+          # Upload multi-file report if it exists
           if [ -f "$OUTPUT_DIR/index.html" ]; then
-            echo "✅ Report generated successfully"
-            echo "Report size: $(du -sh $OUTPUT_DIR)"
-          else
-            echo "❌ Failed to generate report"
-            ls -la $OUTPUT_DIR/
-            exit 1
+            echo "Uploading multi-file report..."
+            aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/allure-report/" --quiet
+            MULTI_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/allure-report/index.html"
+            echo "MULTI_URL=$MULTI_URL" >> $GITHUB_ENV
           fi
-
-      - name: Upload Multi-file Report to S3
-        if: steps.check_report.outputs.EXISTS == 'false'
-        run: |
-          REPORT_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}/multi-file/"
-          echo "Uploading multi-file report to: s3://$S3_BUCKET/$REPORT_PATH"
           
-          # Upload with public read access (adjust as needed)
-          aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_PATH" \
-            --acl bucket-owner-full-control \
-            --cache-control "max-age=3600"
-          
-          # Generate URL for the report
-          echo "REPORT_URL=https://$S3_BUCKET.s3.amazonaws.com/${REPORT_PATH}index.html" >> $GITHUB_ENV
-          echo "📊 Multi-file report available at: $REPORT_URL"
-
-      - name: Generate Single File Report
-        if: steps.check_report.outputs.EXISTS == 'false'
-        run: |
-          echo "Generating single-file Allure report..."
-          allure generate ./s3-data/ -o "$SINGLE_FILE_DIR" --single-file --clean
-          
-          # Find the generated file
-          SINGLE_FILE=$(find "$SINGLE_FILE_DIR" -name "*.html" -o -name "*.json" | head -1)
+          # Upload single-file report
+          SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
           if [ -n "$SINGLE_FILE" ]; then
-            mv "$SINGLE_FILE" "$SINGLE_FILE_DIR/allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
-            echo "✅ Single-file report generated: allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
-          else
-            echo "❌ Failed to generate single-file report"
-            exit 1
+            SINGLE_NAME="allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
+            echo "Uploading single-file as: $SINGLE_NAME"
+          
+            # Copy and rename
+            cp "$SINGLE_FILE" "$SINGLE_FILE_DIR/$SINGLE_NAME"
+            aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_NAME" --quiet
+          
+            SINGLE_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/$SINGLE_NAME"
+            echo "SINGLE_URL=$SINGLE_URL" >> $GITHUB_ENV
           fi
+          
+          # Create a test file to verify upload
+          echo "Test upload successful at $(date)" > upload-test.txt
+          aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
 
-      - name: Upload Single File Report to S3
-        if: steps.check_report.outputs.EXISTS == 'false'
-        run: |
-          REPORT_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}/"
-          SINGLE_FILE_NAME="allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
-          
-          echo "Uploading single-file report to: s3://$S3_BUCKET/$REPORT_PATH"
-          
-          # Upload single file
-          aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_FILE_NAME" "s3://$S3_BUCKET/$REPORT_PATH$SINGLE_FILE_NAME" \
-            --acl bucket-owner-full-control \
-            --cache-control "max-age=3600"
-          
-          # Generate direct download URL
-          echo "SINGLE_FILE_URL=https://$S3_BUCKET.s3.amazonaws.com/${REPORT_PATH}${SINGLE_FILE_NAME}" >> $GITHUB_ENV
-          echo "📥 Single file download: $SINGLE_FILE_URL"
-
-      - name: Create Summary File
-        if: steps.check_report.outputs.EXISTS == 'false'
-        run: |
-          SUMMARY_PATH="./summary.json"
-          cat > $SUMMARY_PATH << EOF
-          {
-            "timestamp": "${{ steps.parse_path.outputs.TIMESTAMP_PATH }}",
-            "date": "${{ steps.parse_path.outputs.DATE }}",
-            "time": "${{ steps.parse_path.outputs.TIME }}",
-            "source": "${{ steps.parse_path.outputs.S3_DIR }}",
-            "report_url": "${{ env.REPORT_URL }}",
-            "single_file_url": "${{ env.SINGLE_FILE_URL }}",
-            "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "workflow_run": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
-          
-          # Upload summary to S3
-          REPORT_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}/"
-          aws s3 cp "$SUMMARY_PATH" "s3://$S3_BUCKET/$REPORT_PATH"summary.json \
-            --acl bucket-owner-full-control
-
-      - name: Create Workflow Artifacts
+      - name: Create Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: consul-report-${{ steps.parse_path.outputs.SAFE_ID }}
+          name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
           path: |
-            ${{ env.OUTPUT_DIR }}
-            ${{ env.SINGLE_FILE_DIR }}
+            $SOURCE_DIR/
+            $OUTPUT_DIR/
+            $SINGLE_FILE_DIR/
           retention-days: 7
 
-      - name: Output Report Links
+      - name: Output Results
         run: |
-          echo "🚀 Allure Report Generation Complete!"
-          echo "======================================"
           echo ""
-          echo "📅 Test Run: ${{ steps.parse_path.outputs.DATE }} ${{ steps.parse_path.outputs.TIME }}"
+          echo "========================================"
+          echo "RESULTS SUMMARY"
+          echo "========================================"
           echo ""
-          echo "📊 Interactive Report:"
-          echo "${{ env.REPORT_URL }}"
+          echo "Source: ${{ steps.parse_path.outputs.S3_DIR }}"
+          echo "Test files: ${{ steps.download.outputs.XML_FILES }} XML, ${{ steps.download.outputs.JSON_FILES }} JSON"
           echo ""
-          echo "📥 Single File Download:"
-          echo "${{ env.SINGLE_FILE_URL }}"
-          echo ""
-          echo "🔗 Direct Download Command:"
-          echo "curl -LO '${{ env.SINGLE_FILE_URL }}'"
-          echo ""
-          echo "📁 S3 Location:"
-          echo "s3://$S3_BUCKET/Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}/"
-          echo ""
-          echo "⏰ Generated at: $(date)"
-
-      - name: Send Notification (Optional)
-        if: success()
-        run: |
-          # Example: Send notification to Slack, Teams, etc.
-          echo "Report generation completed successfully!"
-          # Add your notification logic here
+          
+          if [ "${{ steps.generate.outputs.REPORT_GENERATED }}" = "true" ]; then
+            echo "✅ REPORTS GENERATED"
+            echo ""
+          
+            if [ -n "${{ env.MULTI_URL }}" ]; then
+              echo "📊 Multi-file report:"
+              echo "   ${{ env.MULTI_URL }}"
+            fi
+          
+            if [ -n "${{ env.SINGLE_URL }}" ]; then
+              echo ""
+              echo "📥 Single-file report:"
+              echo "   ${{ env.SINGLE_URL }}"
+              echo ""
+              echo "Download command:"
+              echo "curl -LO '${{ env.SINGLE_URL }}'"
+            fi
+          else
+            echo "❌ REPORTS FAILED"
+            echo ""
+            echo "Check the 'Debug Allure Results' step for details."
+            echo "Common issues:"
+            echo "1. XML files not in Allure format"
+            echo "2. Missing required XML structure"
+            echo "3. Allure compatibility issue"
+          fi
