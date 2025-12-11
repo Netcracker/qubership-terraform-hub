@@ -208,16 +208,16 @@ jobs:
           echo "Test upload successful at $(date)" > upload-test.txt
           aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
 
-      - name: Create Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
-          path: |
-            $SOURCE_DIR/
-            $OUTPUT_DIR/
-            $SINGLE_FILE_DIR/
-          retention-days: 7
+      #- name: Create Artifacts
+        #if: always()
+        #uses: actions/upload-artifact@v4
+        #with:
+         #name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
+          #path: |
+            #$SOURCE_DIR/
+            #$OUTPUT_DIR/
+            #$SINGLE_FILE_DIR/
+          #retention-days: 7
 
       - name: Output Results
         run: |
