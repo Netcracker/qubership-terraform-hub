@@ -199,6 +199,7 @@ jobs:
             # Copy and rename
             cp "$SINGLE_FILE" "$SINGLE_FILE_DIR/$SINGLE_NAME"
             aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_NAME" --quiet
+            echo "DIRECT_S3_LINK=s3://$S3_BUCKET/$REPORT_BASE_PATH/" >> $GITHUB_ENV
           
             SINGLE_URL="https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/$REPORT_BASE_PATH/$SINGLE_NAME"
             echo "SINGLE_URL=$SINGLE_URL" >> $GITHUB_ENV
@@ -275,10 +276,12 @@ jobs:
             📎 DOWNLOAD LINKS:
             Single report file: ${{ env.SINGLE_URL }}
             Multi report file:  ${{ env.MULTI_URL }}
-            S3 Direct link: s3://$S3_BUCKET/$REPORT_BASE_PATH/
+            
+            Direct link for usage win Winscp or analog viewers (need authorization):
+            ${{ env.DIRECT_S3_LINK }}
 
 
             Best regards,
-            AWS Team
+            DevOPS Team
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
-          from: "AWS Reports <${{ secrets.SMTP_USERNAME }}>"
+          from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
