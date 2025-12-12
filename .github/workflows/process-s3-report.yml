@@ -274,14 +274,15 @@ jobs:
             📊 REPORT DETAILS:
             
             📎 DOWNLOAD LINKS:
-            Single report file: ${{ env.SINGLE_URL }}
-            Multi report file:  ${{ env.MULTI_URL }}
+            Single report file: 
+            ${{ env.SINGLE_URL }}
+            
+            Multi report file:  
+            ${{ env.MULTI_URL }}
             
             Direct link for usage win Winscp or analog viewers (need authorization):
             ${{ env.DIRECT_S3_LINK }}
 
-
-            Best regards,
-            DevOPS Team
-          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
+            Best regards, DevOPS Team
+          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
