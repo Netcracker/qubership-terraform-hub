@@ -256,3 +256,29 @@ jobs:
             echo "2. Missing required XML structure"
             echo "3. Allure compatibility issue"
           fi
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Allure reports - ${{ github.repository }}"
+          body: |
+            Hello,
+            
+            The Allure report has been successfully generated.
+            
+            📊 REPORT DETAILS:
+            
+            📎 DOWNLOAD LINKS:
+            Single report file: ${{ env.SINGLE_URL }}
+            Multi report file:  ${{ env.MULTI_URL }}
+            S3 Direct link: s3://$S3_BUCKET/$REPORT_BASE_PATH/
+
+
+            Best regards,
+            AWS Team
+          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
+          from: "AWS Reports <${{ secrets.SMTP_USERNAME }}>"
