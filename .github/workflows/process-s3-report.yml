@@ -274,9 +274,11 @@ jobs:
             📊 REPORT DETAILS:
             
             📎 DOWNLOAD LINKS:
-            Single report file: ${{ env.SINGLE_URL }}
+            Single report file: 
+            ${{ env.SINGLE_URL }}
             
-            Multi report file:  ${{ env.MULTI_URL }}
+            Multi report file:  
+            ${{ env.MULTI_URL }}
             
             Direct link for usage win Winscp or analog viewers (need authorization):
             ${{ env.DIRECT_S3_LINK }}
