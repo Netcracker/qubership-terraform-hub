@@ -281,7 +281,6 @@ jobs:
             Direct link for usage win Winscp or analog viewers (need authorization):
             ${{ env.DIRECT_S3_LINK }}
 
-            Best regards,
-            DevOPS Team
+            Best regards, DevOPS Team
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
