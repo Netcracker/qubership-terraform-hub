@@ -283,5 +283,5 @@ jobs:
 
             Best regards,
             DevOPS Team
-          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
+          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
