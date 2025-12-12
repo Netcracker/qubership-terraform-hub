@@ -35,7 +35,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-
+          
       - name: Terraform Init and Plan
         run: |
           cd ./ec2-scheduled/stop
