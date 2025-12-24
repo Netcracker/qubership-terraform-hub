@@ -6,7 +6,7 @@ on:
 
 env:
   S3_BUCKET: qstp-consul
-  GIT_PAT_1: ${{ secrets.GIT_PAT_TOKEN }}
+  GIT_PAT_1: ${{ secrets.GH_ACCESS_TOKEN }}
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
   SOURCE_DIR: ./allure-results
@@ -31,16 +31,21 @@ jobs:
         run: |
           cd /tmp
           git clone https://github.com/Netcracker/qubership-testing-results
+          echo "✅ Cleaning git files"
+          rm -rf /tmp/qubership-testing-results/Result/
+          echo "✅ Re-creating Result directory"
+          mkdir -p /tmp/qubership-testing-results/Result/
+          echo "✅ Sync from S3 to temporary directory"
           aws s3 sync  "s3://qstp-consul/Result/" "/tmp/qubership-testing-results/Result/" --quiet
 
       - name: Push to Git
         run: |
           cd /tmp/qubership-testing-results
-          git config --global user.email "NetcrackerCLPL@gmail.com"
-          git config --global user.name "NetcrackerCLPL"
+          git config --global user.email "NetcrackerCLPLCI@gmail.com"
+          git config --global user.name "NetcrackerCLPLCI"
           git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
-          [ -z "$(git status --porcelain)" ] && echo "✅ No changes" && exit 0
-          echo "----->>>>"
+          [ -z "$(git status --porcelain)" ] && echo "✅ No changes to commit and push" && exit 0
           git add . -A >> /dev/null 
           git commit -a -m "Allure Results AutoSync" >> /dev/null 
           git push origin >> /dev/null
+          echo "✅ All new files pushed to GIT successfully"
