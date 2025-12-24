@@ -31,9 +31,11 @@ jobs:
         run: |
           cd /tmp
           git clone https://github.com/Netcracker/qubership-testing-results
-          echo "Clean git files"
+          echo "Cleaning git files ✅"
           rm -rf /tmp/qubership-testing-results/Result/
+          echo "Re-creating Result directory ✅"
           mkdir -p /tmp/qubership-testing-results/Result/
+          echo "Sync from S3 to temporary directory ✅"
           aws s3 sync  "s3://qstp-consul/Result/" "/tmp/qubership-testing-results/Result/" --quiet
 
       - name: Push to Git
