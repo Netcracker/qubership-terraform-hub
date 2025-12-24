@@ -35,12 +35,12 @@ jobs:
 
       - name: Prepare Result Files
         run: |
-          cd /mnt
+          cd /tmp
           git clone https://github.com/Netcracker/qubership-testing-results
-          aws s3 sync  "s3://qstp-consul/Result/" "/mnt/qubership-testing-results/Result/" --quiet
+          aws s3 sync  "s3://qstp-consul/Result/" "/tmp/qubership-testing-results/Result/" --quiet
 
       - name: Push to Git
         run: |
-          git add /mnt/qubership-testing-results/
+          git add /tmp/qubership-testing-results/
           git commit -m "Allure Results Sync"
           git push
