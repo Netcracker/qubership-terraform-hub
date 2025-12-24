@@ -37,8 +37,9 @@ jobs:
         run: |
           git config --global user.email "roman.barmin.qubership@gmail.com"
           git config --global user.name "Rbarmin89"
-          echo ""
-          git remote set-url origin https://x-access-token:${{ secrets.GIT_PAT_TOKEN }}@github.com/Netcracker/qubership-testing-results.git
+          echo "----->>>>"
+          echo "${GIT_PAT}"
+          git remote set-url origin https://${GIT_PAT}@github.com/Netcracker/qubership-testing-results.git
           echo "----->>>>"
           cd /tmp/qubership-testing-results
           git add . -A >> /dev/null 
