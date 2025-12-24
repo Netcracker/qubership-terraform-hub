@@ -31,11 +31,11 @@ jobs:
         run: |
           cd /tmp
           git clone https://github.com/Netcracker/qubership-testing-results
-          echo "Cleaning git files ✅"
+          echo "✅ Cleaning git files"
           rm -rf /tmp/qubership-testing-results/Result/
-          echo "Re-creating Result directory ✅"
+          echo "✅ Re-creating Result directory"
           mkdir -p /tmp/qubership-testing-results/Result/
-          echo "Sync from S3 to temporary directory ✅"
+          echo "✅ Sync from S3 to temporary directory"
           aws s3 sync  "s3://qstp-consul/Result/" "/tmp/qubership-testing-results/Result/" --quiet
 
       - name: Push to Git
@@ -45,7 +45,7 @@ jobs:
           git config --global user.name "NetcrackerCLPLCI"
           git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
           [ -z "$(git status --porcelain)" ] && echo "✅ No changes to commit and push" && exit 0
-          echo "----->>>>"
           git add . -A >> /dev/null 
           git commit -a -m "Allure Results AutoSync" >> /dev/null 
           git push origin >> /dev/null
+          echo "✅ All new files pushed to GIT successfully"
