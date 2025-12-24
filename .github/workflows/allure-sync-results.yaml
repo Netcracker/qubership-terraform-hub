@@ -41,6 +41,7 @@ jobs:
 
       - name: Push to Git
         run: |
-          git add /tmp/qubership-testing-results/
+          cd /tmp/qubership-testing-results
+          git add .
           git commit -m "Allure Results Sync"
           git push
