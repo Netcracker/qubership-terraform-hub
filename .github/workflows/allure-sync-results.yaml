@@ -46,6 +46,6 @@ jobs:
           git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
           [ -z "$(git status --porcelain)" ] && echo "✅ No changes to commit and push" && exit 0
           git add . -A >> /dev/null 
-          git commit -a -m "Allure Results AutoSync" >> /dev/null 
+          git commit -a -m "Allure Results AutoSync $(date -Iseconds)" >> /dev/null 
           git push origin >> /dev/null
           echo "✅ All new files pushed to GIT successfully"
