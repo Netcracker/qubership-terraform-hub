@@ -1,0 +1,46 @@
+name: Sync results from S3 to Git
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+env:
+  S3_BUCKET: qstp-consul
+  GIT_PAT: ${{ secrets.GIT_PAT_TOKEN }}
+  OUTPUT_DIR: ./allure-report
+  SINGLE_FILE_DIR: ./allure-single-file
+  SOURCE_DIR: ./allure-results
+
+jobs:
+  sync-results-s3-git:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Config Git
+        run: |
+          git config --global user.email "roman.barmin.qubership@gmail.com"
+          git config --global user.name "Rbarmin89"
+          git remote set-url origin https://rbarmin89:$GIT_PAT@github.com/Netcracker/qubership-testing-results.git
+
+      - name: Prepare Result Files
+        run: |
+          cd /mnt
+          git clone https://github.com/Netcracker/qubership-testing-results
+          aws s3 sync  "s3://qstp-consul/Result/" "/mnt/qubership-testing-results/Result/" --quiet
+
+      - name: Push to Git
+        run: |
+          git add /mnt/qubership-testing-results/
+          git commit -m "Allure Results Sync"
+          git push
