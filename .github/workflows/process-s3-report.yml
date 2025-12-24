@@ -286,20 +286,3 @@ jobs:
             Best regards, DevOPS Team
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
-      - name: Upload to Results to remote git repository
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-        # deploy_key: ${{ secrets.DEPLOY_KEY }}
-          github_token: ${{ secrets.PAT_TOKEN }}
-          external_repository: Netcracker/qubership-testing-results
-          publish_dir: ./path/to/files  # Directory to upload
-          keep_files: false  # Set to true to keep existing files
-        # Alternative using personal access token:
-        # github_token: ${{ secrets.PAT_TOKEN }}
-        # external_repository: target-username/target-repo-name
