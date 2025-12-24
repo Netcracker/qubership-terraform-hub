@@ -39,7 +39,7 @@ jobs:
           git config --global user.email "NetcrackerCLPL@gmail.com"
           git config --global user.name "NetcrackerCLPL"
           git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
-          git status --porcelain
+          [ -z "$(git status --porcelain)" ] && echo "✅ No changes" && exit 0
           echo "----->>>>"
           git add . -A >> /dev/null 
           git commit -a -m "Allure Results AutoSync" >> /dev/null 
