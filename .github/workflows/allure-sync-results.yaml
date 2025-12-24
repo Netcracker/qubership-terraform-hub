@@ -37,7 +37,7 @@ jobs:
         run: |
           git config --global user.email "NetcrackerCLPL@gmail.com"
           git config --global user.name "NetcrackerCLPL"
-          git remote set-url origin https://${{ GIT_PAT }}@github.com/Netcracker/qubership-testing-results.git
+          git remote set-url origin https://$GIT_PAT@github.com/Netcracker/qubership-testing-results.git
           echo "----->>>>"
           cd /tmp/qubership-testing-results
           git add . -A >> /dev/null 
