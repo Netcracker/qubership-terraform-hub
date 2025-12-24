@@ -6,7 +6,7 @@ on:
 
 env:
   S3_BUCKET: qstp-consul
-  GIT_PAT: ${{ secrets.GH_ACCESS_TOKEN }}
+  GIT_PAT: ${{ secrets.GIT_PAT_TOKEN }}
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
   SOURCE_DIR: ./allure-results
