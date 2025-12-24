@@ -35,11 +35,9 @@ jobs:
 
       - name: Push to Git
         run: |
-          git config --global user.email "roman.barmin.qubership@gmail.com"
-          git config --global user.name "Rbarmin89"
-          echo "----->>>>"
-          echo "${GIT_PAT}"
-          git remote set-url origin https://${GIT_PAT}@github.com/Netcracker/qubership-testing-results.git
+          git config --global user.email "NetcrackerCLPL@gmail.com"
+          git config --global user.name "NetcrackerCLPL"
+          git remote set-url origin https://${{ GH_ACCESS_TOKEN }}@github.com/Netcracker/qubership-testing-results.git
           echo "----->>>>"
           cd /tmp/qubership-testing-results
           git add . -A >> /dev/null 
