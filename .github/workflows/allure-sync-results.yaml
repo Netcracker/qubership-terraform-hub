@@ -27,12 +27,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Config Git
-        run: |
-          git config --global user.email "roman.barmin.qubership@gmail.com"
-          git config --global user.name "Rbarmin89"
-          git remote set-url origin https://rbarmin89:$GIT_PAT@github.com/Netcracker/qubership-testing-results.git
-
       - name: Prepare Result Files
         run: |
           cd /tmp
@@ -41,6 +35,10 @@ jobs:
 
       - name: Push to Git
         run: |
+          git config --global user.email "roman.barmin.qubership@gmail.com"
+          git config --global user.name "Rbarmin89"
+          git remote set-url origin https://rbarmin89:$GIT_PAT@github.com/Netcracker/qubership-testing-results.git
+          echo "----->>>>"
           cd /tmp/qubership-testing-results
           git add . -A >> /dev/null 
           git commit -a -m "Allure Results AutoSync" >> /dev/null 
