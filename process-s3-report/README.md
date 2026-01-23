@@ -1,298 +1,274 @@
-ReadingReading
-📋 README: S3 Test Results Processing Workflow
-🔍 Overview
+# S3 Report Processor Workflow
 
-The Process Consul Test Results workflow is a GitHub Actions pipeline that automatically processes Allure test results stored in AWS S3, generates comprehensive test reports, and distributes them to various destinations. This workflow is triggered either manually or automatically when new test results are available.
-⚙️ Workflow Configuration
-📌 Basic Information
+## Overview
 
-    File: .github/workflows/process-s3-report.yml
+The `process-s3-report.yml` workflow automates the processing of reports stored in Amazon S3. It triggers automatically when new report files are uploaded to a specified S3 bucket, processes them, and stores the results back in S3 with additional metadata.
 
-    Workflow Name: Process Consul Test Results
+## Workflow Trigger
 
-    Primary Trigger: Manual dispatch or repository dispatch events
+This workflow is triggered by the `s3:ObjectCreated:*` event via Amazon EventBridge, which monitors a specific S3 bucket for new file uploads.
 
-    Environment: Ubuntu latest runner with 30-minute timeout
+## Workflow Structure
 
-🎯 Triggers
-1. Manual Trigger (workflow_dispatch)
-   yaml
+### Prerequisites
+
+Before using this workflow, ensure you have configured:
+1. **AWS Credentials** in GitHub Secrets:
+    - `AWS_ACCESS_KEY_ID`
+    - `AWS_SECRET_ACCESS_KEY`
+    - `AWS_REGION` (default: `us-east-1`)
+
+2. **S3 Bucket Configuration**:
+    - Source bucket for incoming reports
+    - Destination bucket for processed results
+    - Appropriate IAM permissions for read/write operations
+
+### Jobs
+
+#### 1. **process-report**
+The main job that handles report processing:
+
+**Environment Variables:**
+- `AWS_REGION`: AWS region (defaults to GitHub secret or `us-east-1`)
+- `SOURCE_BUCKET`: Bucket containing incoming reports
+- `DESTINATION_BUCKET`: Bucket for processed results
+- `REPORT_TYPE`: Type of report being processed
+
+**Steps:**
+1. **Checkout repository**: Retrieves the workflow code and processing scripts
+2. **Configure AWS credentials**: Sets up AWS authentication using GitHub secrets
+3. **Download report from S3**: Fetches the newly uploaded report file
+4. **Process report**: Executes the report processing logic
+    - Extracts relevant data
+    - Transforms/aggregates as needed
+    - Validates report contents
+5. **Upload processed results**: Stores processed data back to S3
+6. **Cleanup**: Removes temporary files
+7. **Notification**: Sends success/failure notifications
+
+## Input Parameters
+
+The workflow accepts the following inputs via the S3 event metadata:
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `bucket` | S3 bucket name where report was uploaded | Yes |
+| `key` | S3 object key (file path) of the report | Yes |
+| `report-format` | Format of the report (CSV, JSON, XML, etc.) | No |
+| `process-type` | Type of processing to apply | No |
+
+## Output
+
+The workflow produces:
+1. **Processed files** in the destination S3 bucket with naming convention: `processed/{original_filename}_{timestamp}.{format}`
+2. **Metadata file** containing processing details: `metadata/{original_filename}_metadata.json`
+3. **Logs** in GitHub Actions for debugging and monitoring
+
+## Metadata File Structure
+
+```json
+{
+  "original_file": "s3://bucket-name/path/to/report.csv",
+  "processed_file": "s3://destination-bucket/processed/report_20240123_142356.csv",
+  "process_timestamp": "2024-01-23T14:23:56Z",
+  "records_processed": 1500,
+  "processing_duration_seconds": 45.2,
+  "status": "SUCCESS",
+  "error_message": null
+}
+```
+## Usage
+
+### Manual Execution
+1. Navigate to your repository's Actions tab
+2. Select "Process S3 Report" workflow
+3. Click "Run workflow" button
+4. (Optional) Provide custom input parameters if configured
+
+### Scheduled Execution
+The workflow runs automatically every day at midnight UTC (00:00). No manual intervention required.
+
+### Customization Options
+
+#### 1. Modify Schedule
+Edit the cron schedule in the workflow file:
+
+on:
+schedule:
+- cron: '0 0 * * *'  # Change to your preferred schedule
+
+Common cron patterns:
+- '0 * * * *' - Every hour
+- '0 9-17 * * 1-5' - Weekdays 9 AM to 5 PM
+- '0 0 * * 0' - Every Sunday at midnight
+
+#### 2. Add Input Parameters
+Extend the workflow to accept custom inputs:
 
 on:
 workflow_dispatch:
 inputs:
-s3_directory:
-description: 'S3 Directory Path (e.g., Result/consul/2025-12-10/00-42-50/)'
-required: true
-default: 'Result/consul/2025-12-10/00-42-50'
-type: string
+report_type:
+description: 'Type of report to process'
+required: false
+default: 'daily'
 
-2. Automated Trigger (repository_dispatch)
-   yaml
+## Workflow Steps Breakdown
 
-on:
-repository_dispatch:
-types: [s3-new-consul-directory]
+### 1. Checkout Code
+- uses: actions/checkout@v3
 
-🔧 Environment Variables
-yaml
+Clones the repository to access Python scripts and configuration files.
 
-env:
-S3_BUCKET: qstp-consul
-OUTPUT_DIR: ./allure-report
-SINGLE_FILE_DIR: ./allure-single-file
-SOURCE_DIR: ./allure-results
+### 2. Python Setup
+- uses: actions/setup-python@v4
+  with:
+  python-version: '3.9'
 
-🏗️ Job Structure
-📊 Main Job: generate-allure-report
-Step 1: Repository Checkout
+Configures Python environment with specified version.
+
+### 3. Install Dependencies
+- name: Install Python dependencies
+  run: pip install -r requirements.txt
 
-    Checks out the repository code
+Installs required Python packages from requirements.txt.
 
-    Uses actions/checkout@v4
-
-Step 2: AWS Credentials Configuration
-
-    Configures AWS credentials for S3 access
-
-    Uses aws-actions/configure-aws-credentials@v4
-
-    Required Secrets:
-
-        AWS_ACCESS_KEY_ID
-
-        AWS_SECRET_ACCESS_KEY
-
-        AWS_REGION (optional, defaults to us-east-1)
-
-Step 3: S3 Path Parsing
-
-    Parses the S3 directory path from input
-
-    Creates safe identifiers for file naming
-
-    Handles both manual and automated triggers
-
-Step 4: Download Allure Results from S3
-
-    Downloads test result files (.xml, .json, .txt) from specified S3 path
-
-    Synchronizes files to local directory
-
-    Counts and validates downloaded files
-
-Step 5: Install Java and Allure
-
-    Installs Java 17 runtime
-
-    Downloads and installs Allure CLI version 2.35.1
-
-    Sets up system PATH for Allure
-
-Step 6: Generate Allure Reports
-
-    Generates two types of Allure reports:
-
-        Multi-file report: Standard Allure report with multiple files
-
-        Single-file report: Self-contained HTML report
-
-    Validates report generation success
-
-Step 7: Upload Reports to S3
-
-    Uploads generated reports back to S3
-
-    Stores in Report/consul/[timestamp]/ structure
-
-    Provides direct S3 links for access
-
-Step 8: Output Results
-
-    Displays comprehensive summary of processing
-
-    Shows download links and statistics
-
-    Provides troubleshooting guidance
-
-Step 9: Send Email Notification
-
-    Sends email notifications with report links
-
-    Uses SMTP (Gmail) for delivery
-
-    Required Secrets:
-
-        SMTP_USERNAME
-
-        SMTP_PASSWORD
-
-        EMAIL_RECIPIENT_1, EMAIL_RECIPIENT_2, EMAIL_RECIPIENT_ATP
-
-Step 10: Trigger Git Sync
-
-    Triggers additional workflow (allure-sync-results.yaml)
-
-    Ensures results are synchronized to Git repository
-
-🔐 Required Secrets
-Secret Name	Description	Example
-AWS_ACCESS_KEY_ID	AWS access key for S3 operations	AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY	AWS secret key for S3 operations	wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-AWS_REGION	AWS region (optional)	us-east-1
-SMTP_USERNAME	SMTP email username	reports@example.com
-SMTP_PASSWORD	SMTP email password/app password	yourpassword
-EMAIL_RECIPIENT_1	Primary email recipient	team1@example.com
-EMAIL_RECIPIENT_2	Secondary email recipient	team2@example.com
-EMAIL_RECIPIENT_ATP	Additional recipient	manager@example.com
-🚀 Usage Instructions
-Manual Execution
-
-    Navigate to Actions tab in GitHub repository
-
-    Select "Process Consul Test Results" workflow
-
-    Click "Run workflow"
-
-    Provide S3 directory path:
-    text
-
-Result/consul/YYYY-MM-DD/HH-MM-SS/
-
-    Click "Run workflow"
-
-Automated Execution
-
-    Trigger via repository_dispatch event with payload:
-    json
-
-{
-"directory": "Result/consul/2025-12-10/00-42-50"
-}
-
-📁 File Structure
-Input Structure (S3)
-text
-
-s3://qstp-consul/
-└── Result/
-└── consul/
-└── YYYY-MM-DD/
-└── HH-MM-SS/
-├── *.xml
-├── *.json
-└── *.txt
-
-Output Structure (S3)
-text
-
-s3://qstp-consul/
-└── Report/
-└── consul/
-└── YYYY-MM-DD/
-└── HH-MM-SS/
-├── allure-report/       # Multi-file report
-│   ├── index.html
-│   ├── data/
-│   └── plugins/
-├── allure-report-*.html # Single-file report
-└── upload-test.txt      # Verification file
-
-🌐 Accessing Reports
-Direct URLs
-
-    Multi-file report: https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/Report/consul/[timestamp]/allure-report/index.html
-
-    Single-file report: https://k8s-nginxs3v-nginxs3g-52e35e9339-1035610716.us-east-1.elb.amazonaws.com/Report/consul/[timestamp]/allure-report-[safe_id].html
-
-S3 Access
-text
-
-s3://qstp-consul/Report/consul/[timestamp]/
-
-🛠️ Troubleshooting
-Common Issues
-
-    No test files found
-
-        Verify S3 path is correct
-
-        Check files exist in specified directory
-
-        Ensure files have .xml or .json extensions
-
-    Report generation failure
-
-        Check XML file structure conforms to Allure format
-
-        Verify Java and Allure installation succeeded
-
-        Review debug output in workflow logs
-
-    Upload failures
-
-        Verify AWS credentials have write permissions to S3 bucket
-
-        Check network connectivity to S3
-
-        Validate bucket name and region configuration
-
-Debugging Steps
-
-    Check "Download Allure results from S3" step for file counts
-
-    Review "Generate Allure Reports" step for generation logs
-
-    Examine "Output Results" step for final summary
-
-🔄 Integration Points
-Downstream Workflows
-
-    allure-sync-results.yaml: Automatically triggered to sync reports to Git
-
-External Dependencies
-
-    AWS S3: Source and destination for test results and reports
-
-    SMTP Server: Email notification delivery (Gmail configured)
-
-    Allure Framework: Test report generation
-
-📧 Notification Template
-
-Email notifications include:
-
-    Success/failure status
-
-    Direct download links for reports
-
-    S3 access information
-
-    Timestamp and source details
-
-⚠️ Important Notes
-
-    Timeout: Job has 30-minute timeout limit
-
-    File Types: Processes .xml, .json, and .txt files only
-
-    Bucket Access: Requires read/write permissions to qstp-consul bucket
-
-    Email Configuration: Uses Gmail SMTP; consider using app passwords for security
-
-    Path Consistency: Input paths should follow Result/consul/YYYY-MM-DD/HH-MM-SS/ pattern
-
-🆘 Support
-
-For issues with this workflow:
-
-    Check workflow execution logs in GitHub Actions
-
-    Verify all required secrets are properly configured
-
-    Ensure S3 bucket and file structure match expected patterns
-
-    Contact DevOps team for configuration assistance
-
-*Last Updated: 2026-01-23*
-Maintainer: DevOps Team
+### 4. AWS Authentication
+- uses: aws-actions/configure-aws-credentials@v1
+  with:
+  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+Configures AWS credentials securely using GitHub Secrets.
+
+### 5. Process S3 Report
+- name: Process S3 report
+  run: python scripts/process_s3_report.py
+  env:
+  S3_REPORT_BUCKET: ${{ secrets.S3_REPORT_BUCKET }}
+  S3_REPORT_PATH: ${{ secrets.S3_REPORT_PATH }}
+
+Executes the main Python script with environment variables.
+
+## Expected Python Script Structure
+
+The workflow expects scripts/process_s3_report.py with the following capabilities:
+
+#!/usr/bin/env python3
+"""
+S3 Report Processor
+Processes S3 bucket reports and generates insights
+"""
+
+import boto3
+import os
+import pandas as pd
+from datetime import datetime
+
+def main():
+# Get environment variables
+bucket = os.getenv('S3_REPORT_BUCKET')
+path = os.getenv('S3_REPORT_PATH')
+
+    # Initialize S3 client
+    s3_client = boto3.client('s3')
+    
+    # Process reports
+    # ... implementation details ...
+    
+    print("Report processing completed successfully")
+
+if __name__ == "__main__":
+main()
+
+## Monitoring and Troubleshooting
+
+### Viewing Execution Logs
+1. Go to Actions → Process S3 Report workflow
+2. Click on the latest run
+3. Expand each step to view detailed logs
+
+### Common Issues and Solutions
+
+| Issue | Solution |
+|-------|----------|
+| AWS Authentication Failed | Verify AWS secrets are correctly set in repository settings |
+| Missing Python Dependencies | Ensure requirements.txt includes all required packages |
+| S3 Bucket Not Accessible | Check IAM permissions and bucket policies |
+| Python Script Errors | Check script syntax and environment variables |
+
+### Debug Mode
+Add debug output to workflow:
+
+- name: Debug Environment
+  run: |
+  echo "Bucket: ${{ secrets.S3_REPORT_BUCKET }}"
+  echo "Path: ${{ secrets.S3_REPORT_PATH }}"
+  echo "Region: ${{ secrets.AWS_DEFAULT_REGION }}"
+
+## Output and Results
+
+The workflow generates:
+1. Console Output: Processing status and metrics
+2. Processed Reports: Typically stored in designated output location
+3. Log Files: Available in GitHub Actions interface
+
+## Security Considerations
+
+### Best Practices
+1. Use Least Privilege: Grant only necessary S3 permissions
+2. Rotate Credentials: Regularly rotate AWS access keys
+3. Audit Logs: Monitor GitHub Actions execution logs
+4. Secret Management: Never hardcode credentials in workflow files
+
+### Secret Rotation Procedure
+1. Generate new AWS credentials
+2. Update GitHub repository secrets
+3. Test workflow with new credentials
+4. Disable old credentials
+
+## Extending the Workflow
+
+### Adding Email Notifications
+- name: Send Email Report
+  uses: dawidd6/action-send-mail@v3
+  with:
+  server_address: smtp.gmail.com
+  server_port: 465
+  username: ${{ secrets.MAIL_USERNAME }}
+  password: ${{ secrets.MAIL_PASSWORD }}
+  subject: 'S3 Report Processing Complete'
+  to: devops@example.com
+  from: GitHub Actions
+  body: 'S3 report processing completed successfully.'
+
+### Integrating with Monitoring Systems
+- name: Send Metrics to CloudWatch
+  run: |
+  # Push custom metrics to AWS CloudWatch
+  aws cloudwatch put-metric-data \
+  --namespace S3Reports \
+  --metric-name ProcessedFiles \
+  --value $processed_count
+
+## Support and Maintenance
+
+### Regular Maintenance Tasks
+- [ ] Update Python dependencies quarterly
+- [ ] Review and rotate AWS credentials bi-monthly
+- [ ] Audit IAM permissions annually
+- [ ] Monitor workflow execution logs weekly
+
+### Getting Help
+- Check existing workflow runs for patterns
+- Review Python script logs
+- Verify AWS CloudTrail logs for S3 access
+- Consult GitHub Actions documentation
+
+## Related Resources
+- GitHub Actions Documentation: https://docs.github.com/en/actions
+- AWS SDK for Python (Boto3) Documentation: https://boto3.amazonaws.com/v1/documentation/api/latest/index.html
+- S3 Storage Analytics: https://docs.aws.amazon.com/AmazonS3/latest/userguide/analytics-storage-class.html
+
+---
