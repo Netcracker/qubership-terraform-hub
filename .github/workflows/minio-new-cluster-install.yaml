@@ -1,0 +1,182 @@
+name: Minio New Cluster Installation
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Minio cluster name'
+        required: true
+      base_url:
+        description: 'Base URL for Minio API'
+        required: true
+      access_key:
+        description: 'Minio access key'
+        required: true
+      secret_key:
+        description: 'Minio secret key'
+        required: true
+        type: password
+      region:
+        description: 'Minio region'
+        default: 'us-east-1'
+        required: false
+      drive_count:
+        description: 'Number of drives per node'
+        default: '1'
+        required: false
+      storage_class:
+        description: 'Storage class (STANDARD, REDUCED_REDUNDANCY, etc.)'
+        default: 'STANDARD'
+        required: false
+      tags:
+        description: 'Tags for Minio resources (format: key1=value1,key2=value2)'
+        required: false
+
+env:
+  TF_WORKSPACE: minio-${{ github.event.inputs.cluster_name }}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      workspace: ${{ env.TF_WORKSPACE }}
+      cluster_name: ${{ github.event.inputs.cluster_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.3.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Create Terraform workspace
+        run: |
+          terraform workspace new $TF_WORKSPACE || terraform workspace select $TF_WORKSPACE
+
+      - name: Set up outputs
+        run: |
+          echo "Workspace: $TF_WORKSPACE"
+          echo "Cluster name: ${{ github.event.inputs.cluster_name }}"
+
+  plan:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.3.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Select Terraform workspace
+        run: terraform workspace select ${{ needs.setup.outputs.workspace }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var="cluster_name=${{ github.event.inputs.cluster_name }}" \
+            -var="base_url=${{ github.event.inputs.base_url }}" \
+            -var="access_key=${{ github.event.inputs.access_key }}" \
+            -var="secret_key=${{ github.event.inputs.secret_key }}" \
+            -var="region=${{ github.event.inputs.region }}" \
+            -var="drive_count=${{ github.event.inputs.drive_count }}" \
+            -var="storage_class=${{ github.event.inputs.storage_class }}" \
+            -var="tags=${{ github.event.inputs.tags }}" \
+            -out=tfplan
+        env:
+          TF_VAR_secret_key: ${{ github.event.inputs.secret_key }}
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-${{ github.event.inputs.cluster_name }}
+          path: tfplan
+          retention-days: 1
+
+  apply:
+    needs: [setup, plan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.3.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan-${{ github.event.inputs.cluster_name }}
+
+      - name: Select Terraform workspace
+        run: terraform workspace select ${{ needs.setup.outputs.workspace }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply tfplan
+
+      - name: Get Minio endpoints
+        id: endpoints
+        run: |
+          MINIO_ENDPOINT=$(terraform output -raw minio_endpoint)
+          CONSOLE_ENDPOINT=$(terraform output -raw console_endpoint || echo "N/A")
+          echo "minio_endpoint=$MINIO_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "console_endpoint=$CONSOLE_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Create deployment summary
+        run: |
+          echo "## Minio Cluster Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster Name:** ${{ github.event.inputs.cluster_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Access Information:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Minio Endpoint: ${{ steps.endpoints.outputs.minio_endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Console Endpoint: ${{ steps.endpoints.outputs.console_endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Access Key: ${{ github.event.inputs.access_key }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Region: ${{ github.event.inputs.region }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Storage Class: ${{ github.event.inputs.storage_class }}" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    needs: [apply]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        run: |
+          if [ "${{ needs.apply.result }}" == "success" ]; then
+            echo "Minio cluster deployment successful"
+          else
+            echo "Minio cluster deployment failed"
+            exit 1
+          fi
