@@ -40,7 +40,7 @@ jobs:
         run: |
           cd ./ec2-scheduled/stop
           aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
-          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
+          #aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
           aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0
           terraform init
           terraform plan -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}"
