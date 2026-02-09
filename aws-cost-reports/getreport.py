@@ -64,16 +64,15 @@ def generate_reports(data, start_date, end_date):
         print("No data available for report generation")
         return
 
-    # --- ИСПРАВЛЕНИЕ НАЧИНАЕТСЯ ЗДЕСЬ ---
-    # Сначала обрабатываем данные, полученные от AWS
+    # Collect data
     tag_values = set()
-    dates_from_aws = []  # Даты, которые реально вернул AWS
+    dates = []
     cost_data = {}
 
     # Process AWS data
     for result in data['ResultsByTime']:
         date = result['TimePeriod']['Start']
-        dates_from_aws.append(date)
+        dates.append(date)
 
         if 'Groups' in result:
             for group in result['Groups']:
@@ -86,36 +85,9 @@ def generate_reports(data, start_date, end_date):
                 cost = group['Metrics']['BlendedCost']['Amount']
                 cost_data[tag_value][date] = cost
 
-    # Теперь создаем ПОЛНЫЙ список всех дней в запрошенном периоде
-    # Это гарантирует, что в отчете будут все дни месяца
-    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-
-    all_dates = []
-    current_dt = start_dt
-    while current_dt <= end_dt:
-        all_dates.append(current_dt.strftime('%Y-%m-%d'))
-        current_dt += timedelta(days=1)
-
-    # Используем полный список дат для отчета
-    dates = all_dates
-
-    # Дополнительно: убеждаемся, что для каждого тега есть запись на КАЖДЫЙ день
-    for tag in tag_values:
-        for date in dates:
-            if date not in cost_data.get(tag, {}):
-                # Если для этого дня данных нет, явно указываем 0
-                if tag not in cost_data:
-                    cost_data[tag] = {}
-                cost_data[tag][date] = "0.00"
-    # --- ИСПРАВЛЕНИЕ ЗАКАНЧИВАЕТСЯ ЗДЕСЬ ---
-
     # Sort data
     dates.sort()
     tag_values = sorted(tag_values)
-
-    # Небольшая отладочная информация для проверки
-    print(f"Report period includes {len(dates)} days: from {dates[0]} to {dates[-1]}")
 
     # Generate CSV
     generate_csv(tag_values, dates, cost_data)
@@ -303,7 +275,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
         ['Report Period:', f"{start_date} to {end_date}"],
         ['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
         ['Total Tags:', len(tag_values)],
-        ['Total Days:', len(dates)],  # Теперь здесь будет корректное количество дней
+        ['Total Days:', len(dates)],
         ['Data Source:', 'AWS Cost Explorer'],
         ['Group By:', 'Tag: cost-usage']
     ]
