@@ -358,27 +358,17 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
         # Fallback: formatted text box
         annotation_row = total_row_idx + 2
         annotation_text = """cost-usage$ - Total cost of untagged AWS resources. Includes monthly TAX fee charged on the 1st day of the month.
-
-cost-usage$Istio-SVT - Istio service mesh infrastructure for SVT projects.
-
-cost-usage$api-hub - API Gateway and management platform costs.
-
-cost-usage$cncf_report - Cloud Native Computing Foundation reporting infrastructure.
-
-cost-usage$common - Shared infrastructure resources used across multiple projects.
-
-cost-usage$github-runner - CI/CD GitHub Actions runner execution costs.
-
-cost-usage$pioneer - Pioneer project infrastructure and services.
-
-cost-usage$pioner - Pioneer project infrastructure and services (check spelling).
-
-cost-usage$qstp - Quality Service Tracking Platform infrastructure.
-
-cost-usage total - Sum of all tagged and untagged resources with 'cost-usage' tag assignment.
-
-Key point: Only the first line (cost-usage$) represents untagged resources where the monthly TAX is applied on the 1st day, explaining the spike in cost at the beginning of the month. All other lines are resources that have been properly tagged.
-"""
+                        cost-usage$Istio-SVT - Istio service mesh infrastructure for SVT projects.
+                        cost-usage$api-hub - API Gateway and management platform costs.
+                        cost-usage$cncf_report - Cloud Native Computing Foundation reporting infrastructure.
+                        cost-usage$common - Shared infrastructure resources used across multiple projects.
+                        cost-usage$github-runner - CI/CD GitHub Actions runner execution costs.
+                        cost-usage$pioneer - Pioneer project infrastructure and services.
+                        cost-usage$pioner - Pioneer project infrastructure and services (check spelling).
+                        cost-usage$qstp - Quality Service Tracking Platform infrastructure.
+                        cost-usage total - Sum of all tagged and untagged resources with 'cost-usage' tag assignment.
+                        Key point: Only the first line (cost-usage$) represents untagged resources where the monthly TAX is applied on the 1st day, explaining the spike in cost at the beginning of the month. All other lines are resources that have been properly tagged.
+                        """
 
         annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
         annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
