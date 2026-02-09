@@ -8,14 +8,26 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 def get_previous_month_dates():
-    """Get dates for the previous month"""
+    """Get dates for the previous month for AWS Cost Explorer"""
     today = datetime.now()
+
+    # First day of current month (e.g., 2026-02-01)
     first_day_current = today.replace(day=1)
+
+    # Last day of previous month (e.g., 2026-01-31)
     last_day_previous = first_day_current - timedelta(days=1)
+
+    # First day of previous month (e.g., 2026-01-01)
     first_day_previous = last_day_previous.replace(day=1)
-    # Get the actual last day of previous month
+
+    # AWS Cost Explorer requires NEXT day as End date to include full previous month
+    # Start=2026-01-01, End=2026-02-01 includes all of January up to 23:59:59 on Jan 31
     start_date = first_day_previous.strftime('%Y-%m-%d')
-    end_date = last_day_previous.strftime('%Y-%m-%d')
+    end_date = first_day_current.strftime('%Y-%m-%d')  # First day of current month
+
+    # Debug info
+    print(f"AWS query range: Start={start_date}, End={end_date}")
+    print(f"This covers full month: {first_day_previous.strftime('%Y-%m')}")
 
     return start_date, end_date
 
