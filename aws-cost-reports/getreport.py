@@ -12,14 +12,10 @@ def get_previous_month_dates():
     today = datetime.now()
     first_day_current = today.replace(day=1)
     last_day_previous = first_day_current - timedelta(days=1)
-
     first_day_previous = last_day_previous.replace(day=1)
-
     # Get the actual last day of previous month
-    last_day_of_previous_month = last_day_previous
-
     start_date = first_day_previous.strftime('%Y-%m-%d')
-    end_date = last_day_of_previous_month.strftime('%Y-%m-%d')
+    end_date = last_day_previous.strftime('%Y-%m-%d')
 
     return start_date, end_date
 
