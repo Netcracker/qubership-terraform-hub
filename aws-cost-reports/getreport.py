@@ -30,7 +30,10 @@ def get_previous_month_dates():
 def clean_tag_key(raw_key):
     """Remove 'cost-usage$' prefix from tag key"""
     if raw_key and raw_key.startswith('cost-usage$'):
-        return raw_key.replace('cost-usage$', '')
+        cleaned = raw_key.replace('cost-usage$', '')
+        # Если после удаления префикса осталась пустая строка - это untagged
+        return cleaned if cleaned else 'untagged'
+    # If tag is None
     return raw_key if raw_key else 'untagged'
 
 def get_cost_by_tag():
