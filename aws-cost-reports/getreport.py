@@ -350,31 +350,39 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
         print("✓ Added floating Shape annotation")
 
-    except ImportError as e:
-        print(f"Note: Could not create floating Shape: {e}")
-        print("Adding annotation as formatted text box instead...")
+        except ImportError as e:
+            print(f"Note: Could not create floating Shape: {e}")
+            print("Adding annotation as formatted text box instead...")
 
-        # Fallback: formatted text box
-        annotation_row = total_row_idx + 2
-        annotation_text = """Annotation for cost-usage tags:
+            # Fallback: formatted text box with improved annotation
+            annotation_row = total_row_idx + 2
+            annotation_text = """Cost Report Annotation - Understanding the First Column:
+    
+    The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
+    
+    • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
+      - All untagged AWS resources
+      - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
+      - Any resources not assigned to specific projects
+    
+    • Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
+    
+    • 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+    
+    Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
 
-- 'untagged' - Total cost of resources without 'cost-usage' tag. Includes monthly TAX fee charged on the 1st.
-- All other entries are properly tagged resources grouped by their tag values.
+            annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
+            annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
+            annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+            annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+            annotation_cell.border = border
 
-Note: The 'untagged' line may show a spike at month start due to the TAX fee application."""
+            # Merge cells for better visibility (make it wider)
+            ws.merge_cells(start_row=annotation_row, start_column=1,
+                           end_row=annotation_row, end_column=min(6, len(dates)+2))
 
-        annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
-        annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
-        annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
-        annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
-        annotation_cell.border = border
-
-        # Merge cells for better visibility
-        ws.merge_cells(start_row=annotation_row, start_column=1,
-                       end_row=annotation_row, end_column=min(5, len(dates)+2))
-
-        # Auto-adjust row height for wrapped text
-        ws.row_dimensions[annotation_row].height = 100
+            # Auto-adjust row height for wrapped text
+            ws.row_dimensions[annotation_row].height = 180
 
     # Add info sheet
     info_ws = wb.create_sheet("Info")
