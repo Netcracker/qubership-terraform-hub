@@ -28,15 +28,9 @@ def get_previous_month_dates():
     return start_date, end_date
 
 def clean_tag_key(raw_key):
-    """
-    Remove AWS prefix from tag key.
-    AWS returns keys in format: "tag$cost-usage$<actual_value>"
-    This function extracts only the actual value.
-    """
-    if raw_key and raw_key.startswith('tag$cost-usage$'):
-        # Return only the part after the last '$'
-        return raw_key.split('$')[-1]
-    # If key doesn't match expected format or is empty, return as is or 'untagged'
+    """Remove 'cost-usage$' prefix from tag key"""
+    if raw_key and raw_key.startswith('cost-usage$'):
+        return raw_key.replace('cost-usage$', '')
     return raw_key if raw_key else 'untagged'
 
 def get_cost_by_tag():
