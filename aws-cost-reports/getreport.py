@@ -31,9 +31,9 @@ def clean_tag_key(raw_key):
     """Remove 'cost-usage$' prefix from tag key"""
     if raw_key and raw_key.startswith('cost-usage$'):
         cleaned = raw_key.replace('cost-usage$', '')
-        # Если после удаления префикса осталась пустая строка - это untagged
+        # If after removing prefix we get empty string - this is untagged resources
         return cleaned if cleaned else 'untagged'
-    # If tag is None
+    # If key doesn't match expected format or is None
     return raw_key if raw_key else 'untagged'
 
 def get_cost_by_tag():
@@ -317,7 +317,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
                 solidFill=SolidFill(srgbClr="000000")  # Black color
             )
         )
-        p1.add_run("Annotation for \"cost-usage\":")
+        p1.add_run("Understanding the Cost Report:")
         rich_text.add(p1)
 
         # Paragraph 2: Main text
@@ -328,8 +328,74 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
                 solidFill=SolidFill(srgbClr="333333")  # Dark gray
             )
         )
-        p2.add_run("This report shows costs grouped by 'cost-usage' tag values. The 'untagged' entry (if present) represents resources without this tag. A monthly TAX fee is applied to untagged resources on the 1st day of the month, which may cause a spike in costs.")
+        p2.add_run("This report shows costs broken down by 'cost-usage' tag values. The first column contains:")
         rich_text.add(p2)
+
+        # Paragraph 3: Untagged explanation
+        p3 = Paragraph()
+        p3.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p3.add_run("• 'untagged'")
+        rich_text.add(p3)
+
+        p3b = Paragraph()
+        p3b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p3b.add_run(" - Resources without the 'cost-usage' tag. This includes all untagged AWS resources and the monthly TAX fee (applied on the 1st day of each month, causing a cost spike).")
+        rich_text.add(p3b)
+
+        # Paragraph 4: Project tags
+        p4 = Paragraph()
+        p4.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p4.add_run("• Project-specific tags")
+        rich_text.add(p4)
+
+        p4b = Paragraph()
+        p4b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p4b.add_run(" (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names.")
+        rich_text.add(p4b)
+
+        # Paragraph 5: Common resources
+        p5 = Paragraph()
+        p5.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p5.add_run("• 'common'")
+        rich_text.add(p5)
+
+        p5b = Paragraph()
+        p5b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p5b.add_run(" - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools).")
+        rich_text.add(p5b)
 
         # Create Shape with properties
         shape = Shape(
@@ -350,39 +416,39 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
         print("✓ Added floating Shape annotation")
 
-        except ImportError as e:
-            print(f"Note: Could not create floating Shape: {e}")
-            print("Adding annotation as formatted text box instead...")
+    except ImportError as e:
+        print(f"Note: Could not create floating Shape: {e}")
+        print("Adding annotation as formatted text box instead...")
 
-            # Fallback: formatted text box with improved annotation
-            annotation_row = total_row_idx + 2
-            annotation_text = """Cost Report Annotation - Understanding the First Column:
-    
-    The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
-    
-    • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
-      - All untagged AWS resources
-      - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
-      - Any resources not assigned to specific projects
-    
-    • Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
-    
-    • 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
-    
-    Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
+        # Fallback: formatted text box with improved annotation
+        annotation_row = total_row_idx + 2
+        annotation_text = """Cost Report Annotation - Understanding the First Column:
 
-            annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
-            annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
-            annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
-            annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
-            annotation_cell.border = border
+The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
 
-            # Merge cells for better visibility (make it wider)
-            ws.merge_cells(start_row=annotation_row, start_column=1,
-                           end_row=annotation_row, end_column=min(6, len(dates)+2))
+• 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
+  - All untagged AWS resources
+  - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
+  - Any resources not assigned to specific projects
 
-            # Auto-adjust row height for wrapped text
-            ws.row_dimensions[annotation_row].height = 180
+• Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
+
+• 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+
+Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
+
+        annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
+        annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
+        annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+        annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        annotation_cell.border = border
+
+        # Merge cells for better visibility (make it wider)
+        ws.merge_cells(start_row=annotation_row, start_column=1,
+                       end_row=annotation_row, end_column=min(6, len(dates)+2))
+
+        # Auto-adjust row height for wrapped text
+        ws.row_dimensions[annotation_row].height = 200
 
     # Add info sheet
     info_ws = wb.create_sheet("Info")
