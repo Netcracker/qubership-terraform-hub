@@ -45,6 +45,14 @@ jobs:
             ./aws-cost-reports/costs.xlsx
           retention-days: 30
 
+      - name: Extract total cost from CSV
+        id: extract_total
+        run: |
+          # Extract the TOTAL row from CSV (last row, last column)
+          TOTAL_COST=$(tail -n 1 ./aws-cost-reports/costs.csv | awk -F ',' '{print $NF}' | tr -d '"')
+          echo "total_cost=${TOTAL_COST}" >> $GITHUB_OUTPUT
+          echo "Extracted total cost: ${TOTAL_COST} USD"
+
       - name: Get current date and report period
         id: date
         run: |
@@ -59,23 +67,26 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "AWS Cost Report for ${{ steps.date.outputs.report_month }} - ${{ github.repository }}"
+          subject: "Qubership AWS Cost Report for ${{ steps.date.outputs.report_month }} - Total: $${{ steps.extract_total.outputs.total_cost }}"
           body: |
-            Hello,
-            
+            Hello, Team
+
             The monthly AWS cost report has been successfully generated.
-            
-            📊 REPORT DETAILS:
+
+            📊 **REPORT SUMMARY**
             - Period: ${{ steps.date.outputs.report_month }}
+            - Total Cost: $${{ steps.extract_total.outputs.total_cost }}
             - Generated: ${{ steps.date.outputs.current_date }}
             - Repository: ${{ github.repository }}
-            
-            📎 DOWNLOAD LINKS:
+
+            📎 **DOWNLOAD LINKS**
             Artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             Generated files:
-            • costs.csv (CSV format)
-            • costs.xlsx (Excel format)
+            • `costs.csv` (CSV format with daily breakdown)
+            • `costs.xlsx` (Excel format with formatting)
+
+            💡 *Note: The total cost includes all tagged and untagged resources for the period.*
 
             Best regards,
             AWS Cost Reporting System
