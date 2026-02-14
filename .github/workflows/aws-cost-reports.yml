@@ -75,7 +75,7 @@ jobs:
 
             📊 **REPORT SUMMARY**
             - Period: ${{ steps.date.outputs.report_month }}
-            - Total Cost: $${{ steps.extract_total.outputs.total_cost }} USD
+            - Total Cost: $${{ steps.extract_total.outputs.total_cost }}
             - Generated: ${{ steps.date.outputs.current_date }}
             - Repository: ${{ github.repository }}
 
