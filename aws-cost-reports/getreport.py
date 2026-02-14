@@ -25,11 +25,16 @@ def get_previous_month_dates():
     start_date = first_day_previous.strftime('%Y-%m-%d')
     end_date = first_day_current.strftime('%Y-%m-%d')  # First day of current month
 
-    # Debug info
-    print(f"AWS query range: Start={start_date}, End={end_date}")
-    print(f"This covers full month: {first_day_previous.strftime('%Y-%m')}")
-
     return start_date, end_date
+
+def clean_tag_key(raw_key):
+    """Remove 'cost-usage$' prefix from tag key"""
+    if raw_key and raw_key.startswith('cost-usage$'):
+        cleaned = raw_key.replace('cost-usage$', '')
+        # If after removing prefix we get empty string - this is untagged resources
+        return cleaned if cleaned else 'untagged'
+    # If key doesn't match expected format or is None
+    return raw_key if raw_key else 'untagged'
 
 def get_cost_by_tag():
     """Get cost data by cost-usage tag"""
@@ -76,7 +81,9 @@ def generate_reports(data, start_date, end_date):
 
         if 'Groups' in result:
             for group in result['Groups']:
-                tag_value = group['Keys'][0] if group['Keys'] else 'without tag'
+                # Clean the tag key from AWS prefix
+                raw_key = group['Keys'][0] if group['Keys'] else None
+                tag_value = clean_tag_key(raw_key)
                 tag_values.add(tag_value)
 
                 if tag_value not in cost_data:
@@ -103,7 +110,7 @@ def generate_csv(tag_values, dates, cost_data):
         writer = csv.writer(csvfile)
 
         # Header: tags in first column, dates in subsequent columns
-        header = ['cost-usage'] + dates + ['Total costs($)']
+        header = ['Tag value (cost-usage)'] + dates + ['Total costs($)']
         writer.writerow(header)
 
         # Data for each tag
@@ -128,7 +135,7 @@ def generate_csv(tag_values, dates, cost_data):
             tag_totals[tag] = tag_total
 
         # Total row
-        total_row = ['cost-usage total']
+        total_row = ['TOTAL']
         grand_total = 0.0
 
         for date in dates:
@@ -170,7 +177,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
                     bottom=Side(style='thin'))
 
     # Header
-    ws['A1'] = 'cost-usage'
+    ws['A1'] = 'Tag value (cost-usage)'
     for col, date in enumerate(dates, 2):
         ws.cell(row=1, column=col, value=date)
     ws.cell(row=1, column=len(dates)+2, value='Total costs($)')
@@ -215,7 +222,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
     # Total row
     total_row_idx = len(tag_values) + 2
-    ws.cell(row=total_row_idx, column=1, value='cost-usage total')
+    ws.cell(row=total_row_idx, column=1, value='TOTAL')
     total_header_cell = ws.cell(row=total_row_idx, column=1)
     total_header_cell.font = total_font
     total_header_cell.fill = total_fill
@@ -266,6 +273,183 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
     # Freeze panes
     ws.freeze_panes = 'B2'
 
+    # === ADD FLOATING SHAPE ANNOTATION ===
+    try:
+        # Import required modules for Shape
+        from openpyxl.drawing.spreadsheet_drawing import (
+            AnchorMarker, OneCellAnchor, SpreadsheetDrawing
+        )
+        from openpyxl.drawing.xdr import XDRPositiveSize2D
+        from openpyxl.drawing.text import (
+            RichText, Paragraph, ParagraphProperties, CharacterProperties
+        )
+        from openpyxl.drawing.fill import SolidFill
+        from openpyxl.drawing.line import LineProperties
+        from openpyxl.drawing.shape import Shape
+
+        # Create drawing object
+        drawing = SpreadsheetDrawing()
+
+        # Position the Shape (floating text box)
+        # Position: Starting at column C (2), row 14 (13 in 0-based)
+        marker = AnchorMarker(
+            col=2,    # Column C (A=0, B=1, C=2)
+            colOff=0, # Horizontal offset from column
+            row=13,   # Row 14 (1=0, 2=1, ..., 14=13)
+            rowOff=0  # Vertical offset from row
+        )
+
+        # Size of the Shape (width=~8cm, height=~3cm)
+        size = XDRPositiveSize2D(cx=6000000, cy=1500000)
+
+        # Create anchor
+        anchor = OneCellAnchor(_from=marker, ext=size)
+
+        # Create RichText content
+        rich_text = RichText()
+
+        # Paragraph 1: Header
+        p1 = Paragraph()
+        p1.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1200,  # Font size 12pt
+                b=True,   # Bold
+                solidFill=SolidFill(srgbClr="000000")  # Black color
+            )
+        )
+        p1.add_run("Understanding the Cost Report:")
+        rich_text.add(p1)
+
+        # Paragraph 2: Main text
+        p2 = Paragraph()
+        p2.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,  # Font size 10pt
+                solidFill=SolidFill(srgbClr="333333")  # Dark gray
+            )
+        )
+        p2.add_run("This report shows costs broken down by 'cost-usage' tag values. The first column contains:")
+        rich_text.add(p2)
+
+        # Paragraph 3: Untagged explanation
+        p3 = Paragraph()
+        p3.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p3.add_run("• 'untagged'")
+        rich_text.add(p3)
+
+        p3b = Paragraph()
+        p3b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p3b.add_run(" - Resources without the 'cost-usage' tag. This includes all untagged AWS resources and the monthly TAX fee (applied on the 1st day of each month, causing a cost spike).")
+        rich_text.add(p3b)
+
+        # Paragraph 4: Project tags
+        p4 = Paragraph()
+        p4.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p4.add_run("• Project-specific tags")
+        rich_text.add(p4)
+
+        p4b = Paragraph()
+        p4b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p4b.add_run(" (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names.")
+        rich_text.add(p4b)
+
+        # Paragraph 5: Common resources
+        p5 = Paragraph()
+        p5.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                b=True,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p5.add_run("• 'common'")
+        rich_text.add(p5)
+
+        p5b = Paragraph()
+        p5b.rpPr = ParagraphProperties(
+            defRPr=CharacterProperties(
+                sz=1000,
+                solidFill=SolidFill(srgbClr="333333")
+            )
+        )
+        p5b.add_run(" - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools).")
+        rich_text.add(p5b)
+
+        # Create Shape with properties
+        shape = Shape(
+            anchor=anchor,
+            rich_text=rich_text,
+            shape_type='rect'  # Rectangle shape
+        )
+
+        # Set Shape properties (yellow background, blue border)
+        shape.fill = SolidFill(srgbClr="FFFFCC")  # Light yellow background
+        shape.line = LineProperties(w=9525, solidFill=SolidFill(srgbClr="0000FF"))  # Blue border
+
+        # Add shape to drawing
+        drawing.add(shape)
+
+        # Add drawing to worksheet
+        ws.add_drawing(drawing)
+
+        print("✓ Added floating Shape annotation")
+
+    except ImportError as e:
+        print(f"Note: Could not create floating Shape: {e}")
+        print("Adding annotation as formatted text box instead...")
+
+        # Fallback: formatted text box with improved annotation
+        annotation_row = total_row_idx + 2
+        annotation_text = """Cost Report Annotation - Understanding the First Column:
+
+The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
+
+• 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
+  - All untagged AWS resources
+  - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
+  - Any resources not assigned to specific projects
+
+• Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
+
+• 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+
+Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
+
+        annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
+        annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
+        annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+        annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        annotation_cell.border = border
+
+        # Merge cells for better visibility (make it wider)
+        ws.merge_cells(start_row=annotation_row, start_column=1,
+                       end_row=annotation_row, end_column=min(6, len(dates)+2))
+
+        # Auto-adjust row height for wrapped text
+        ws.row_dimensions[annotation_row].height = 200
+
     # Add info sheet
     info_ws = wb.create_sheet("Info")
     info_ws['A1'] = 'Cost Report Information'
@@ -274,7 +458,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
     info_data = [
         ['Report Period:', f"{start_date} to {end_date}"],
         ['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-        ['Total Tags:', len(tag_values)],
+        ['Total Tag Values:', len(tag_values)],
         ['Total Days:', len(dates)],
         ['Data Source:', 'AWS Cost Explorer'],
         ['Group By:', 'Tag: cost-usage']
@@ -313,7 +497,7 @@ def check_available_tags():
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         data = json.loads(result.stdout)
 
-        print("Available tags:")
+        print("Available tags in AWS Cost Explorer:")
         for tag in sorted(data.get('Tags', [])):
             print(f"  - {tag}")
 
@@ -324,18 +508,24 @@ def check_available_tags():
 
 def main():
     """Main function"""
-    print("Generating report for tag 'cost-usage'...")
+    print("=" * 60)
+    print("AWS Cost Report Generator for tag 'cost-usage'")
+    print("=" * 60)
 
     # Check available tags
     if not check_available_tags():
-        print("Warning: tag 'cost-usage' might be missing")
+        print("Warning: tag 'cost-usage' might be missing or not available in the selected period")
 
     # Get data
     data, start_date, end_date = get_cost_by_tag()
 
     if data:
         generate_reports(data, start_date, end_date)
-        print("Reports generated successfully!")
+        print("\n" + "=" * 60)
+        print("✓ Reports generated successfully!")
+        print("  - costs.csv")
+        print("  - costs.xlsx")
+        print("=" * 60)
     else:
         print("Failed to retrieve data from AWS")
 
