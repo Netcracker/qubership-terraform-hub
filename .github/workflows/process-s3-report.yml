@@ -307,9 +307,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'allure-sync-results.yaml',
-              ref: 'main',
-              inputs: {
-                test_type: '${{ steps.parse_path.outputs.TEST_TYPE }}',
-                timestamp: '${{ steps.parse_path.outputs.TIMESTAMP_PATH }}'
-              }
+              ref: 'main'
             })
