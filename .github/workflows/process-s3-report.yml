@@ -1,4 +1,4 @@
-name: Process Consul Test Results
+name: Process Test Results
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: 'Result/consul/2025-12-10/00-42-50'
         type: string
   repository_dispatch:
-    types: [s3-new-consul-directory]
+    types: [s3-new-result-directory]
 
 env:
   S3_BUCKET: qstp-consul
@@ -52,15 +52,21 @@ jobs:
           S3_DIR=${S3_DIR%/}
           echo "S3_DIR=$S3_DIR" >> $GITHUB_OUTPUT
           
-          # Extract timestamp path for report
-          TIMESTAMP_PATH=$(echo "$S3_DIR" | sed 's|^Result/consul/||')
+          # Extract test type (the folder after Result/)
+          # Format: Result/[test-type]/YYYY-MM-DD/HH-MM-SS
+          TEST_TYPE=$(echo "$S3_DIR" | cut -d'/' -f2)
+          echo "TEST_TYPE=$TEST_TYPE" >> $GITHUB_OUTPUT
+          
+          # Extract timestamp path (everything after Result/[test-type]/)
+          TIMESTAMP_PATH=$(echo "$S3_DIR" | sed "s|^Result/$TEST_TYPE/||")
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
           
           # Create safe identifier
-          SAFE_ID=$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')
+          SAFE_ID="${TEST_TYPE}_$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')"
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
           
-          echo "Parsed: $S3_DIR → Report/consul/$TIMESTAMP_PATH"
+          echo "Parsed: Test Type: $TEST_TYPE, Timestamp: $TIMESTAMP_PATH"
+          echo "Report path: Report/$TEST_TYPE/$TIMESTAMP_PATH"
 
       - name: Download Allure results from S3
         id: download
@@ -124,7 +130,7 @@ jobs:
       - name: Generate Allure Reports
         id: generate
         run: |
-          echo "Generating Allure reports from: $SOURCE_DIR"
+          echo "Generating Allure reports from: $SOURCE_DIR for test type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
           
           # Clean previous reports
           rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
@@ -136,21 +142,21 @@ jobs:
             pwd
             echo "Debug contents of allure-results"
             echo "$SOURCE_DIR"
-            ls $SOURCE_DIR/allure-results/
+            ls -la $SOURCE_DIR/
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $OUTPUT_DIR/ --clean
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/ -o $OUTPUT_DIR/ --clean
           
             echo "Generated files in $OUTPUT_DIR"
-            ls $OUTPUT_DIR
+            ls -la $OUTPUT_DIR/
           
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results/ -o $SINGLE_FILE_DIR --clean --single-file 
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/ -o $SINGLE_FILE_DIR --clean --single-file 
           
             echo "Generated files in $SINGLE_FILE_DIR"
-            ls $SINGLE_FILE_DIR
+            ls -la $SINGLE_FILE_DIR/
           
             # Check results
             if [ -f "$OUTPUT_DIR/index.html" ]; then
@@ -175,7 +181,9 @@ jobs:
       - name: Upload Reports to S3
         if: steps.generate.outputs.REPORT_GENERATED == 'true'
         run: |
-          REPORT_BASE_PATH="Report/consul/${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
+          TEST_TYPE="${{ steps.parse_path.outputs.TEST_TYPE }}"
+          TIMESTAMP_PATH="${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
+          REPORT_BASE_PATH="Report/$TEST_TYPE/$TIMESTAMP_PATH"
           
           echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
           
@@ -206,14 +214,14 @@ jobs:
           fi
           
           # Create a test file to verify upload
-          echo "Test upload successful at $(date)" > upload-test.txt
+          echo "Test upload successful at $(date) for test type: $TEST_TYPE" > upload-test.txt
           aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
 
       #- name: Create Artifacts
         #if: always()
         #uses: actions/upload-artifact@v4
         #with:
-         #name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
+          #name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
           #path: |
             #$SOURCE_DIR/
             #$OUTPUT_DIR/
@@ -228,6 +236,8 @@ jobs:
           echo "========================================"
           echo ""
           echo "Source: ${{ steps.parse_path.outputs.S3_DIR }}"
+          echo "Test Type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
+          echo "Timestamp: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
           echo "Test files: ${{ steps.download.outputs.XML_FILES }} XML, ${{ steps.download.outputs.JSON_FILES }} JSON"
           echo ""
           
@@ -265,13 +275,15 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Allure reports - ${{ github.repository }}"
+          subject: "Allure reports - ${{ github.repository }} - ${{ steps.parse_path.outputs.TEST_TYPE }}"
           body: |
             Hello,
             
-            The Allure report has been successfully generated.
+            The Allure report has been successfully generated for **${{ steps.parse_path.outputs.TEST_TYPE }}**.
             
             📊 REPORT DETAILS:
+            - Test Type: ${{ steps.parse_path.outputs.TEST_TYPE }}
+            - Timestamp: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
             
             📎 DOWNLOAD LINKS:
             Single report file: 
@@ -280,10 +292,10 @@ jobs:
             Multi report file:  
             ${{ env.MULTI_URL }}
             
-            Direct link for usage win Winscp or analog viewers (need authorization):
+            Direct link for usage with WinSCP or analog viewers (needs authorization):
             ${{ env.DIRECT_S3_LINK }}
 
-            Best regards, DevOPS Team
+            Best regards, DevOps Team
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
 
@@ -295,5 +307,9 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'allure-sync-results.yaml',
-              ref: 'main'
+              ref: 'main',
+              inputs: {
+                test_type: '${{ steps.parse_path.outputs.TEST_TYPE }}',
+                timestamp: '${{ steps.parse_path.outputs.TIMESTAMP_PATH }}'
+              }
             })
