@@ -146,14 +146,14 @@ jobs:
           
             # Generate multi-file report
             echo "Generating multi-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/ -o $OUTPUT_DIR/ --clean
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results -o $OUTPUT_DIR/ --clean
           
             echo "Generated files in $OUTPUT_DIR"
             ls -la $OUTPUT_DIR/
           
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/ -o $SINGLE_FILE_DIR --clean --single-file 
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results -o $SINGLE_FILE_DIR --clean --single-file 
           
             echo "Generated files in $SINGLE_FILE_DIR"
             ls -la $SINGLE_FILE_DIR/
