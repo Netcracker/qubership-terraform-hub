@@ -183,7 +183,7 @@ jobs:
         run: |
           TEST_TYPE="${{ steps.parse_path.outputs.TEST_TYPE }}"
           TIMESTAMP_PATH="${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
-          REPORT_BASE_PATH="Report/$TIMESTAMP_PATH"
+          REPORT_BASE_PATH="Report/$TEST_TYPE/$TIMESTAMP_PATH"
           
           echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
           
