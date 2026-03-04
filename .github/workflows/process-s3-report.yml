@@ -65,8 +65,8 @@ jobs:
           SAFE_ID="${TEST_TYPE}_$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')"
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
           
-          echo "Parsed: Test Type: $TEST_TYPE, Timestamp: $TIMESTAMP_PATH"
-          echo "Report path: Report/$TEST_TYPE/$TIMESTAMP_PATH"
+          echo "Parsed: Timestamp: $TIMESTAMP_PATH"
+          echo "Report path: Report/$TIMESTAMP_PATH"
 
       - name: Download Allure results from S3
         id: download
@@ -183,7 +183,7 @@ jobs:
         run: |
           TEST_TYPE="${{ steps.parse_path.outputs.TEST_TYPE }}"
           TIMESTAMP_PATH="${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
-          REPORT_BASE_PATH="Report/$TEST_TYPE/$TIMESTAMP_PATH"
+          REPORT_BASE_PATH="Report/$TIMESTAMP_PATH"
           
           echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
           
