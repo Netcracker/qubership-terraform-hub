@@ -52,6 +52,9 @@ jobs:
         env:
           SSH_PUBLIC_KEY: ${{ github.event.inputs.public-key }}
         run: |
+          whoami
+          id
+          pwd
           mkdir -p ~/.ssh
           echo "${SSH_PUBLIC_KEY}" > ~/.ssh/authorized_keys
           chmod 700 ~/.ssh
