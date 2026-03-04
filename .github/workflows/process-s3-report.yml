@@ -62,7 +62,7 @@ jobs:
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
           
           # Create safe identifier
-          SAFE_ID="${TEST_TYPE}_$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')"
+          SAFE_ID="$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')"
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
           
           echo "Parsed: Timestamp: $TIMESTAMP_PATH"
