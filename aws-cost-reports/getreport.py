@@ -428,12 +428,10 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
   - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
   - Any resources without cost-usage tag.
 
-• Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
-
 • 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
 
 • 'Istio-SVT' - Cloud core istio integration research
-  - Owner: Ilya Smirnov
+  - Owner: Aleksandr Iglin
 
 • 'api-hub' - API-Hub test cluster in Qubership AWS
   - Owner: Aleksandr Agishev
@@ -445,7 +443,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
   - Owner: Sergey Ivanov
 
 • 'pioneer' - Qubership sandbox cluster and related resources
-  - Owner: Qubership, DevOps team
+  - Owner: Qubership DevOps team
 
 • 'qstp' - ATP project
   - Owner: Denis Arychkov
