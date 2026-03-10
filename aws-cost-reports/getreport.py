@@ -451,7 +451,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
 
         annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
-        annotation_cell.font = Font(name='Calibri', size=11, bold=True, color="000000")
+        annotation_cell.font = Font(name='Calibri', size=11, bold=False, color="000000")
         annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
         annotation_cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
         annotation_cell.border = border
@@ -478,7 +478,7 @@ Note: The 'untagged' line typically shows a significant spike on the 1st of the 
     ]
 
     for row, (key, value) in enumerate(info_data, 3):
-        info_ws.cell(row=row, column=1, value=key).font = Font(bold=True)
+        info_ws.cell(row=row, column=1, value=key).font = Font(bold=False)
         info_ws.cell(row=row, column=2, value=value)
 
     # Auto-adjust column widths for info sheet
