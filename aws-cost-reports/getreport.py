@@ -461,7 +461,7 @@ Note: The 'untagged' line typically shows a significant spike on the 1st of the 
                        end_row=annotation_row, end_column=min(6, len(dates)+2))
 
         # Auto-adjust row height for wrapped text
-        ws.row_dimensions[annotation_row].height = 200
+        ws.row_dimensions[annotation_row].height = 450
 
     # Add info sheet
     info_ws = wb.create_sheet("Info")
