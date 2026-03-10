@@ -166,9 +166,9 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
     # Styles
     header_font = Font(bold=True, size=12, color="FFFFFF")
     header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-    tag_font = Font(bold=True, size=11)
+    tag_font = Font(bold=False, size=11)
     tag_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
-    total_font = Font(bold=True, color="FF0000", size=11)
+    total_font = Font(bold=False, color="FF0000", size=11)
     total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
 
     border = Border(left=Side(style='thin'),
@@ -422,25 +422,38 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
         # Fallback: formatted text box with improved annotation
         annotation_row = total_row_idx + 2
-        annotation_text = """Cost Report Annotation - Understanding the First Column:
-
-The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
+        annotation_text = """Legend:
 
 • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
-  - All untagged AWS resources
   - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
-  - Any resources not assigned to specific projects
-
-• Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
+  - Any resources without cost-usage tag.
 
 • 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+
+• 'Istio-SVT' - Cloud core istio integration research
+  - Owner: Aleksandr Iglin
+
+• 'api-hub' - API-Hub test cluster in Qubership AWS
+  - Owner: Aleksandr Agishev
+
+• 'cncf_report' - cloud report exadmin.github.io/opensource_team_monitor
+  - Owner: Ilya Smirnov
+
+• 'github-runner' - Obsolete, previously used by Opesearch autotests
+  - Owner: Sergey Ivanov
+
+• 'pioneer' - Qubership sandbox cluster and related resources
+  - Owner: Qubership DevOps team
+
+• 'qstp' - ATP project
+  - Owner: Denis Arychkov
 
 Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
 
         annotation_cell = ws.cell(row=annotation_row, column=1, value=annotation_text)
-        annotation_cell.font = Font(name='Calibri', size=10, bold=True, color="000000")
+        annotation_cell.font = Font(name='Calibri', size=11, bold=False, color="000000")
         annotation_cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
-        annotation_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        annotation_cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
         annotation_cell.border = border
 
         # Merge cells for better visibility (make it wider)
@@ -448,7 +461,7 @@ Note: The 'untagged' line typically shows a significant spike on the 1st of the 
                        end_row=annotation_row, end_column=min(6, len(dates)+2))
 
         # Auto-adjust row height for wrapped text
-        ws.row_dimensions[annotation_row].height = 200
+        ws.row_dimensions[annotation_row].height = 450
 
     # Add info sheet
     info_ws = wb.create_sheet("Info")
@@ -465,7 +478,7 @@ Note: The 'untagged' line typically shows a significant spike on the 1st of the 
     ]
 
     for row, (key, value) in enumerate(info_data, 3):
-        info_ws.cell(row=row, column=1, value=key).font = Font(bold=True)
+        info_ws.cell(row=row, column=1, value=key).font = Font(bold=False)
         info_ws.cell(row=row, column=2, value=value)
 
     # Auto-adjust column widths for info sheet
