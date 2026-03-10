@@ -166,9 +166,9 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
     # Styles
     header_font = Font(bold=True, size=12, color="FFFFFF")
     header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-    tag_font = Font(bold=True, size=11)
+    tag_font = Font(bold=False, size=11)
     tag_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
-    total_font = Font(bold=True, color="FF0000", size=11)
+    total_font = Font(bold=False, color="FF0000", size=11)
     total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
 
     border = Border(left=Side(style='thin'),
