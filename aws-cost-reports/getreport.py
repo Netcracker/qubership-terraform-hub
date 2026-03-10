@@ -422,18 +422,33 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
         # Fallback: formatted text box with improved annotation
         annotation_row = total_row_idx + 2
-        annotation_text = """Cost Report Annotation - Understanding the First Column:
-
-The first column 'Tag value (cost-usage)' shows cost breakdown by different tag values:
+        annotation_text = """Legend:
 
 • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
-  - All untagged AWS resources
   - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
-  - Any resources not assigned to specific projects
+  - Any resources without cost-usage tag.
 
 • Project-specific tags (e.g., 'istio-svt', 'api-hub', 'pioneer', 'qstp') - Resources tagged with specific project names
 
 • 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+
+• 'Istio-SVT' - Cloud core istio integration research
+  - Owner: Ilya Smirnov
+
+• 'api-hub' - API-Hub test cluster in Qubership AWS
+  - Owner: Aleksandr Agishev
+
+• 'cncf_report' - cloud report exadmin.github.io/opensource_team_monitor
+  - Owner: Ilya Smirnov
+
+• 'github-runner' - Obsolete, previously used by Opesearch autotests
+  - Owner: Sergey Ivanov
+
+• 'pioneer' - Qubership sandbox cluster and related resources
+  - Owner: Qubership, DevOps team
+
+• 'qstp' - ATP project
+  - Owner: Denis Arychkov
 
 Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
 
