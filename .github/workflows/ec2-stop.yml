@@ -33,7 +33,7 @@ jobs:
         run: |
           echo "Pioneer ASG: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
           echo "APIHub ASG ondemand: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
-          echo "APIHub ASG spot: "${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
+          echo "APIHub ASG spot: ${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
           echo "Istio ASG: ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           echo "Triggered by: ${{ github.event_name }}"
           echo "Dry run: ${{ github.event.inputs.dry_run }}"
