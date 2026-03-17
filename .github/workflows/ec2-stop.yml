@@ -32,7 +32,8 @@ jobs:
       - name: Debug Variables
         run: |
           echo "Pioneer ASG: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
-          echo "APIHub ASG: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
+          echo "APIHub ASG ondemand: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
+          echo "APIHub ASG spot: "${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
           echo "Istio ASG: ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           echo "Triggered by: ${{ github.event_name }}"
           echo "Dry run: ${{ github.event.inputs.dry_run }}"
@@ -50,6 +51,10 @@ jobs:
           
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}" \
+            --min-size 0 --max-size 0 --desired-capacity 0
+          
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}" \
             --min-size 0 --max-size 0 --desired-capacity 0
           
           aws autoscaling update-auto-scaling-group \
@@ -76,12 +81,14 @@ jobs:
           # Show current state for all ASGs
           show_asg_state "${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
           show_asg_state "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
+          show_asg_state "${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
           show_asg_state "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           
           echo ""
           echo "📋 The following commands WOULD be executed in real mode:"
           echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
           echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
+          echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
           echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
 
       - name: Manual Run - Real Execution
@@ -97,6 +104,10 @@ jobs:
           
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}" \
+            --min-size 0 --max-size 0 --desired-capacity 0
+          
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}" \
             --min-size 0 --max-size 0 --desired-capacity 0
           
           aws autoscaling update-auto-scaling-group \
