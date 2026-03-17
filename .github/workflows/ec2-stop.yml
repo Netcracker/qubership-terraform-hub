@@ -1,11 +1,9 @@
 name: Scheduled Stop of EC2 Instances
 
 on:
-  # Runs at 5 PM UTC on weekdays (real stop)
   schedule:
     - cron: '0 17 * * 1-5'
 
-  # Manual trigger with dry run option
   workflow_dispatch:
     inputs:
       dry_run:
@@ -33,41 +31,70 @@ jobs:
         run: |
           echo "Pioneer ASG: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
           echo "APIHub ASG ondemand: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
-          echo "APIHub ASG spot: ${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
+          echo "APIHub ASG spot: ${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}"
           echo "Istio ASG: ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           echo "Triggered by: ${{ github.event_name }}"
           echo "Dry run: ${{ github.event.inputs.dry_run }}"
 
-      - name: Stop EC2 Instances (Scheduled - Real Execution)
-        if: github.event_name == 'schedule'
+      - name: Stop EC2 Instances with Tag Filtering
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run || false }}
+          IS_SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           cd ./ec2-scheduled/stop
-          echo "⏰ Scheduled run - stopping instances for real"
           
-          # Stop Auto Scaling Groups (set to 0)
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_Pioneer_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+          # Define all ASGs in an array
+          ASG_NAMES=(
+            "${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
+            "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
+            "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}"
+            "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
+          )
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+          # Set mode based on trigger
+          if [[ "$IS_SCHEDULED" == "true" ]]; then
+            echo "⏰ Scheduled run - stopping instances for real"
+            CURRENT_MODE="real"
+          elif [[ "$DRY_RUN" == "true" ]]; then
+            echo "🧪 MANUAL DRY RUN - Only showing current state, no changes applied"
+            CURRENT_MODE="dry"
+          else
+            echo "🚀 MANUAL REAL RUN - Stopping instances"
+            CURRENT_MODE="real"
+          fi
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+          # Function to check if ASG should be stopped
+          should_stop_asg() {
+            local asg_name=$1
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
-
-      - name: Manual Run - Dry Run (Show Only, No Changes)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
-        run: |
-          cd ./ec2-scheduled/stop
-          echo "🧪 MANUAL DRY RUN - Only showing current state, no changes applied"
+            # Skip if ASG name is empty
+            if [[ -z "$asg_name" ]]; then
+              return 1
+            fi
           
-          # Function to display ASG info
+            # Get the autostop tag value
+            TAG_VALUE=$(aws autoscaling describe-auto-scaling-groups \
+              --auto-scaling-group-names "$asg_name" \
+              --query "AutoScalingGroups[0].Tags[?Key=='autostop'].Value" \
+              --output text 2>/dev/null)
+          
+            # Case 1: No tag → stop
+            if [[ -z "$TAG_VALUE" ]]; then
+              echo "ℹ️ No autostop tag found → will stop"
+              return 0  # Stop
+            fi
+          
+            # Case 2: Tag exists → stop only if value is 'true'
+            if [[ "$TAG_VALUE" == "true" ]]; then
+              echo "ℹ️ autostop=true found → will stop"
+              return 0  # Stop
+            else
+              echo "⏸️ autostop=false found → will NOT stop"
+              return 1  # Skip
+            fi
+          }
+          
+          # Function to show ASG state
           show_asg_state() {
             local asg_name=$1
             echo "----------------------------------------"
@@ -75,43 +102,57 @@ jobs:
             aws autoscaling describe-auto-scaling-groups \
               --auto-scaling-group-names "$asg_name" \
               --query 'AutoScalingGroups[0].{CurrentMin:MinSize, CurrentMax:MaxSize, CurrentDesired:DesiredCapacity, Instances:length(Instances)}' \
-              --output table
+              --output table 2>/dev/null || echo "⚠️ Failed to describe ASG"
           }
           
-          # Show current state for all ASGs
-          show_asg_state "${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
-          show_asg_state "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
-          show_asg_state "${{vars.TF_VAR_APIHUB_SPOT_ASG_NAME}}"
-          show_asg_state "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
+          # Process each ASG
+          for ASG in "${ASG_NAMES[@]}"; do
+            echo "----------------------------------------"
+            echo "Checking ASG: $ASG"
           
-          echo ""
-          echo "📋 The following commands WOULD be executed in real mode:"
-          echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
-          echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
-          echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
-          echo "aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0"
-
-      - name: Manual Run - Real Execution
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != 'true'
-        run: |
-          cd ./ec2-scheduled/stop
-          echo "🚀 MANUAL REAL RUN - Stopping instances"
+            # Skip empty ASG names
+            if [[ -z "$ASG" ]]; then
+              echo "⚠️ Skipping empty ASG name"
+              continue
+            fi
           
-          # Stop Auto Scaling Groups (set to 0)
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_Pioneer_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+            # Check if ASG exists
+            if ! aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" --query 'AutoScalingGroups[0]' --output text >/dev/null 2>&1; then
+              echo "⚠️ ASG not found: $ASG"
+              continue
+            fi
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+            # Check if this ASG should be stopped
+            if should_stop_asg "$ASG"; then
+              # Show current state
+              show_asg_state "$ASG"
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+              # Stop the ASG if in real mode
+              if [[ "$CURRENT_MODE" == "real" ]]; then
+                echo "🛑 Stopping ASG: $ASG"
+                aws autoscaling update-auto-scaling-group \
+                  --auto-scaling-group-name "$ASG" \
+                  --min-size 0 --max-size 0 --desired-capacity 0
           
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}" \
-            --min-size 0 --max-size 0 --desired-capacity 0
+                if [ $? -eq 0 ]; then
+                  echo "✅ Successfully stopped $ASG"
+                else
+                  echo "❌ Failed to stop $ASG"
+                fi
+              else
+                echo "📋 Would stop: $ASG"
+                echo "   aws autoscaling update-auto-scaling-group \\"
+                echo "     --auto-scaling-group-name $ASG \\"
+                echo "     --min-size 0 --max-size 0 --desired-capacity 0"
+              fi
+            else
+              echo "⏭️ Skipping ASG: $ASG (autostop=false)"
+            fi
+          done
           
-          echo "✅ All ASGs scaled down to 0"
+          echo "----------------------------------------"
+          if [[ "$CURRENT_MODE" == "dry" ]]; then
+            echo "🧪 Dry run completed. No changes made."
+          elif [[ "$CURRENT_MODE" == "real" ]]; then
+            echo "✅ All eligible ASGs processed."
+          fi
