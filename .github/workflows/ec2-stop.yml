@@ -39,6 +39,9 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           cd ./ec2-scheduled/stop
+          echo "Pioneer ASG: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
+          echo "APIHub ASG: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
+          echo "Istio ASG: ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0 --region us-east-1
           aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0 --region us-east-1
           aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }} --min-size 0 --max-size 0 --desired-capacity 0 --region us-east-1
