@@ -30,6 +30,9 @@ jobs:
       - name: Prepare Result Files
         run: |
           cd /tmp
+          git config --global user.email "NetcrackerCLPLCI@gmail.com"
+          git config --global user.name "NetcrackerCLPLCI"
+          git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
           git clone https://github.com/Netcracker/qubership-testing-results
           echo "✅ Cleaning git files"
           rm -rf /tmp/qubership-testing-results/Result/
