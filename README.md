@@ -29,6 +29,7 @@ Documentation for individual tool/script can be found in docs folder, contents a
 | Consul Install    | Install Consul to EKS Cluster                            | [Consul](docs/consul.md)                              |
 | Zookeeper Install | Install Zookeeper to EKS Cluster                         | [Zookeeper](docs/zookeeper.md)                        |
 | Kafka Install     | Install Kafka to EKS Cluster                             | [Kafka](docs/kafka.md)                                |
+| Order New AWS Env | Order new AWS environment (instance or EKS cluster)      | [New_Env](docs/order_new_env.MD)                                |
 
 ---
 
