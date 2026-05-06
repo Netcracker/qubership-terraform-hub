@@ -35,3 +35,10 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+.idea/
+
+# Common local artifacts
+.DS_Store
+
+# Terraform plan output
+*.tfplan
