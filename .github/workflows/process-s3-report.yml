@@ -12,7 +12,7 @@ on:
     types: [s3-new-result-directory]
 
 env:
-  S3_BUCKET: qstp-consul
+  S3_BUCKET: qstp-results
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
   SOURCE_DIR: ./allure-results
