@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  S3_BUCKET: qstp-consul
+  S3_BUCKET: qstp-results
   GIT_PAT_1: ${{ secrets.GH_ACCESS_TOKEN }}
   OUTPUT_DIR: ./allure-report
   SINGLE_FILE_DIR: ./allure-single-file
