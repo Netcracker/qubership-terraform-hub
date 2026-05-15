@@ -36,7 +36,7 @@ jobs:
           #echo "✅ Re-creating Result directory"
           #mkdir -p /tmp/qubership-testing-results/Result/
           echo "✅ Sync from S3 to temporary directory"
-          aws s3 sync  "s3://qstp-consul/Result/" "/tmp/qubership-testing-results/Result/" --quiet
+          aws s3 sync  "s3://qstp-results/Result/" "/tmp/qubership-testing-results/Result/" --quiet
 
       - name: Push to Git
         run: |
