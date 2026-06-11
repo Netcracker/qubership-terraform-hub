@@ -1,5 +1,7 @@
 name: Minio New Cluster Installation
 
+# NOTE: Requires a minio/ Terraform module (not present in this repository yet).
+
 on:
   workflow_dispatch:
     inputs:
