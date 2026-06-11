@@ -1,5 +1,8 @@
 name: EC2 Instance Control
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:

@@ -1,5 +1,8 @@
 name: Deploy Self-Hosted Runner
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:  # Manual trigger
     inputs:
@@ -42,7 +45,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.13.3
+          terraform_version: 1.12.2
 
       - name: Generate temporary runner token
         id: generate-token

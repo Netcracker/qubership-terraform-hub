@@ -1,5 +1,8 @@
 name: Kubernetes and Infra Install
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -86,7 +89,14 @@ jobs:
           echo "Create new env for TF state"
           fi
           terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
+          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -out=tfplan
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          path: kubernetes-terraform/tfplan
+          retention-days: 1
 
   tf-apply:
     needs: [running-inputs, tf-prepare]
@@ -109,6 +119,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          path: kubernetes-terraform
+
       - name: Terraform Apply
         run: |
           cd ./kubernetes-terraform
@@ -118,7 +134,7 @@ jobs:
           echo "Create new env for TF state"
           fi
           terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform apply -auto-approve tfplan
 
   tf-post-install:
     needs: tf-apply
