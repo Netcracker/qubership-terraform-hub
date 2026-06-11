@@ -1,5 +1,9 @@
 name: GitHub Runner SSH Debug
 
+# Requires a GitHub Environment named "debug" with required reviewers configured.
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +21,7 @@ on:
 jobs:
   debug-ssh:
     runs-on: ubuntu-latest
+    environment: debug
 
     steps:
       - name: Install requirements
