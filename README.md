@@ -23,7 +23,7 @@ Documentation for individual tool/script can be found in docs folder, contents a
 |-------------------|----------------------------------------------------------|-------------------------------------------------------|
 | Kubernetes        | Provision VPC, EKS Cluster and infrastructure components | [Kubernetes Installation](docs/kubernetes-install.md) |
 | EC2 Start         | Scheduled start of predefined EC2 instances              | [EC2 Start](docs/ec2-start.md)                        |
-| EC2 Stop          | Scheduled stop of predefined EC2 instances               | [EC2 Stop](docs/ec2-start.md)                         |
+| EC2 Stop          | Scheduled stop of predefined EC2 instances               | [EC2 Stop](docs/ec2-stop.md)                         |
 | EC2 Control       | Reusable workflow to on-demand start/stop EC2 Instance   | [EC2 Control](docs/ec2-control.md)                    |
 | Postgres Install  | Install Postgres to EKS Cluster                          | [Postgres](docs/postgres.md)                          |
 | Consul Install    | Install Consul to EKS Cluster                            | [Consul](docs/consul.md)                              |
@@ -68,7 +68,7 @@ Stable interface & evolution rules (naming, inputs/outputs, version pinning, min
 
 We welcome contributions from the community! To contribute:
 
-1. Review and sign the [CLA](CLA/cla.md).
+1. Review and sign the [CLA](https://github.com/Netcracker/qubership-workflow-hub/blob/release/v2.2.0/CLA/cla.md).
 2. Check the [CODEOWNERS](CODEOWNERS) file for areas of responsibility.
 3. Open an issue to discuss your changes.
 - For bug / feature / task use the <u>[Issue Guidelines](docs/issue-guidelines.md)</u> (required fields, templates, labels).
