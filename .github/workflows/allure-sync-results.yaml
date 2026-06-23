@@ -37,15 +37,66 @@ jobs:
           #mkdir -p /tmp/qubership-testing-results/Result/
           echo "✅ Sync from S3 to temporary directory"
           aws s3 sync  "s3://qstp-results/Result/" "/tmp/qubership-testing-results/Result/" --quiet
-
+      
+          echo "✅ Removing files that do not end with -result.json"
+          cd /tmp/qubership-testing-results
+          find Result/ -type f ! -name "*-result.json" -delete
+      
       - name: Push to Git
         run: |
           cd /tmp/qubership-testing-results
           git config --global user.email "NetcrackerCLPLCI@gmail.com"
           git config --global user.name "NetcrackerCLPLCI"
-          git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
-          [ -z "$(git status --porcelain)" ] && echo "✅ No changes to commit and push" && exit 0
-          git add . -A >> /dev/null 
-          git commit -a -m "Allure Results AutoSync $(date -Iseconds)" >> /dev/null 
-          git push origin >> /dev/null
-          echo "✅ All new files pushed to GIT successfully"
+          git remote set-url origin https://${GIT_PAT_1}@github.com/RomanB89/private-test
+      
+          # Check if there are any changes at all
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "✅ No changes to commit and push"
+            exit 0
+          fi
+      
+          # Stage everything first to get a complete list of changed files
+          git add -A
+      
+          # Count staged files
+          file_count=$(git diff --cached --name-only | wc -l)
+          echo "Total changed files: $file_count"
+      
+          if [ "$file_count" -le 1000 ]; then
+            # Single commit for small changes
+            git commit -m "Allure Results AutoSync $(date -Iseconds)"
+            git push origin
+            echo "✅ All new files pushed to GIT successfully"
+          else
+            # Unstage everything so we can commit in chunks
+            git reset
+      
+            # Get null-delimited list of all changed files
+            git diff --cached --name-only -z > /tmp/staged_files_null
+      
+            # Process in chunks of 1000
+            declare -a chunk=()
+            count=0
+            chunk_index=1
+            while IFS= read -r -d '' file; do
+              chunk+=("$file")
+              ((count++))
+              if [ "$count" -ge 1000 ]; then
+                git add -- "${chunk[@]}"
+                git commit -m "Allure Results AutoSync $(date -Iseconds) - chunk $chunk_index"
+                chunk=()
+                count=0
+                ((chunk_index++))
+              fi
+            done < /tmp/staged_files_null
+      
+            # Commit any remaining files
+            if [ "$count" -gt 0 ]; then
+              git add -- "${chunk[@]}"
+              git commit -m "Allure Results AutoSync $(date -Iseconds) - chunk $chunk_index"
+            fi
+      
+            # Push all commits at once
+            git push origin
+            echo "✅ All new files pushed to GIT successfully (in $chunk_index commits)"
+          fi
