@@ -40,7 +40,7 @@ jobs:
       
           echo "✅ Removing files that do not end with -result.json"
           cd /tmp/qubership-testing-results
-          find Result/ -type f ! -name "*-result.json" -delete
+          find Result/ -type f ! -name "*-result.json" -delete 1>/dev/null
       
       - name: Push to Git
         run: |
