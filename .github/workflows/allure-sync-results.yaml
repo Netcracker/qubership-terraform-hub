@@ -45,8 +45,8 @@ jobs:
       - name: Push to Git
         run: |
           cd /tmp/qubership-testing-results
-          git config --global user.email "NetcrackerCLPLCI@gmail.com"
-          git config --global user.name "NetcrackerCLPLCI"
+          git config --global user.email "roman.barmin.qubership@gmail.com"
+          git config --global user.name "RomanB89"
           git remote set-url origin https://${GIT_PAT_1}@github.com/RomanB89/private-test.git
       
           # Check if there are any changes (silent)
