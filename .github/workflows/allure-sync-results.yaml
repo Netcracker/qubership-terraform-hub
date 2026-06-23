@@ -36,7 +36,7 @@ jobs:
           #echo "✅ Re-creating Result directory"
           #mkdir -p /tmp/qubership-testing-results/Result/
           echo "✅ Sync from S3 to temporary directory"
-          aws s3 cp "s3://qstp-results/Result/" "/tmp/qubership-testing-results/Result/" --recursive --exclude "*" --include "*-result.json"
+          aws s3 sync "s3://qstp-results/Result/" "/tmp/qubership-testing-results/Result/" --exclude "*" --include "*-result.json" --quiet
       
           echo "✅ Removing files that do not end with -result.json"
           cd /tmp/qubership-testing-results
