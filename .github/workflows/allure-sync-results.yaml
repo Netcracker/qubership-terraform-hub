@@ -49,19 +49,20 @@ jobs:
           git config --global user.name "NetcrackerCLPLCI"
           git remote set-url origin https://${GIT_PAT_1}@github.com/Netcracker/qubership-testing-results.git
       
-          # Check if there are any changes (silent)
+          # Exit early if nothing changed
           if [ -z "$(git status --porcelain)" ]; then
             echo "✅ No changes to commit and push"
             exit 0
           fi
-      
+          
           echo "📦 Staging all changes..."
           git add -A > /dev/null
-      
-          # Count staged files without printing them
+          
+          # Get list of all staged files (null-delimited) and count them
+          git diff --cached --name-only -z > /tmp/staged_files_null
           file_count=$(git diff --cached --name-only | wc -l)
           echo "ℹ️  Total changed files: $file_count"
-      
+          
           if [ "$file_count" -le 1000 ]; then
             echo "🚀 Committing all files in one batch..."
             git commit -q -m "Allure Results AutoSync $(date -Iseconds)"
@@ -69,38 +70,60 @@ jobs:
             echo "✅ All files pushed successfully"
           else
             echo "📦 Splitting into chunks of 1000 files..."
-      
-            # Unstage everything
+            # Unstage everything (changes remain in working tree)
             git reset -q
-      
-            # Get null-delimited list of all changed files (no terminal output)
-            git diff --cached --name-only -z > /tmp/staged_files_null
-      
-            declare -a chunk=()
+          
+            # Read file list from saved null-delimited file
+            chunk=()
             count=0
             chunk_index=1
-      
+          
+            # Helper to stage a chunk (handles deletions)
+            stage_chunk() {
+              local -n files=$1
+              if [ ${#files[@]} -eq 0 ]; then return; fi
+          
+              # Split into existing and deleted files
+              existing=()
+              deleted=()
+              for f in "${files[@]}"; do
+                if [ -f "$f" ]; then
+                  existing+=("$f")
+                else
+                  deleted+=("$f")
+                fi
+              done
+          
+              # Add existing files
+              if [ ${#existing[@]} -gt 0 ]; then
+                git add -- "${existing[@]}" > /dev/null
+              fi
+              # Remove deleted files from index
+              if [ ${#deleted[@]} -gt 0 ]; then
+                git rm --cached -- "${deleted[@]}" > /dev/null 2>&1
+              fi
+          
+              # Commit the staged chunk
+              git commit -q -m "Allure Results AutoSync $(date -Iseconds) - chunk $chunk_index"
+            }
+          
             while IFS= read -r -d '' file; do
               chunk+=("$file")
               ((count++))
               if [ "$count" -ge 1000 ]; then
-                echo "   ↳ Committing chunk $chunk_index ($count files)..."
-                git add -- "${chunk[@]}" > /dev/null
-                git commit -q -m "Allure Results AutoSync $(date -Iseconds) - chunk $chunk_index"
+                stage_chunk chunk
                 chunk=()
                 count=0
                 ((chunk_index++))
               fi
             done < /tmp/staged_files_null
-      
+          
             # Commit any remaining files
             if [ "$count" -gt 0 ]; then
-              echo "   ↳ Committing final chunk $chunk_index ($count files)..."
-              git add -- "${chunk[@]}" > /dev/null
-              git commit -q -m "Allure Results AutoSync $(date -Iseconds) - chunk $chunk_index"
+              stage_chunk chunk
             fi
-      
+          
             echo "🚀 Pushing all commits..."
             git push -q origin
-            echo "✅ All $file_count files pushed successfully (in $chunk_index commits)"
+            echo "✅ All $file_count files pushed successfully (in $((chunk_index - 1)) commits)"
           fi
