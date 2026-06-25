@@ -42,3 +42,7 @@ terraform.rc
 
 # Terraform plan output
 *.tfplan
+
+# Local wiki drafts (folder kept in repo via .gitkeep)
+docs/drafts/*
+!docs/drafts/.gitkeep

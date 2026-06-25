@@ -1,0 +1,19 @@
+---
+description: docs/drafts/ is local-only; publish to external wiki manually
+alwaysApply: true
+---
+
+# Documentation drafts
+
+## `docs/drafts/`
+
+- Write new operational docs and wiki drafts here (S3 access, CloudFront, host runbooks, etc.).
+- **Not tracked in git** — only `docs/drafts/.gitkeep` is committed so the folder exists in the repo.
+- Published source for readers: **external wiki** (user copies articles manually).
+- Existing tracked docs in `docs/*.md` stay in git as before — do not move them to drafts unless asked.
+
+## Agent behavior
+
+- New documentation → `docs/drafts/`
+- Do not `git add` anything under `docs/drafts/` except never needed (.gitkeep is already tracked)
+- Terraform, workflows, and existing `docs/*.md` → commit as usual when requested
