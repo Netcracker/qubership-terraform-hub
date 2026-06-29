@@ -194,7 +194,7 @@ jobs:
           if [ -f "$OUTPUT_DIR/index.html" ]; then
             echo "Uploading multi-file report..."
             aws s3 sync "$OUTPUT_DIR/" "s3://$S3_BUCKET/$REPORT_BASE_PATH/allure-report/" --quiet
-            MULTI_URL="https://atp-reports.dev.qubership.org//$REPORT_BASE_PATH/allure-report/index.html"
+            MULTI_URL="https://atp-reports.dev.qubership.org/$REPORT_BASE_PATH/allure-report/index.html"
             echo "MULTI_URL=$MULTI_URL" >> $GITHUB_ENV
           fi
           
@@ -209,7 +209,7 @@ jobs:
             aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_NAME" --quiet
             echo "DIRECT_S3_LINK=s3://$S3_BUCKET/$REPORT_BASE_PATH/" >> $GITHUB_ENV
           
-            SINGLE_URL="https://atp-reports.dev.qubership.org//$REPORT_BASE_PATH/$SINGLE_NAME"
+            SINGLE_URL="https://atp-reports.dev.qubership.org/$REPORT_BASE_PATH/$SINGLE_NAME"
             echo "SINGLE_URL=$SINGLE_URL" >> $GITHUB_ENV
           fi
           
