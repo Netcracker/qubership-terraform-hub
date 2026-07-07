@@ -426,26 +426,34 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
 • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
   - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
-  - Any resources without cost-usage tag.
+  - Shared or legacy AWS resources not assigned to a project tag, e.g. VPC/networking
+    (NAT gateways, subnets), S3 buckets, Route 53, CloudWatch, and other untagged infrastructure.
 
-• 'common' - Shared infrastructure resources used across multiple projects (e.g., shared databases, networking, monitoring tools)
+• 'common' - Shared infrastructure resources used across multiple projects
+  - Resources: shared databases, VPC/networking, monitoring tools (Prometheus, Grafana, etc.)
 
-• 'Istio-SVT' - Cloud core istio integration research
+• 'Istio-SVT' - Cloud core Istio integration research
+  - Resources: EKS Kubernetes cluster, worker nodes, load balancers, and related AWS infrastructure
   - Owner: Aleksandr Iglin
 
-• 'api-hub' - API-Hub test cluster in Qubership AWS
+• 'api-hub' - API-Hub test environment in Qubership AWS
+  - Resources: EKS Kubernetes cluster, worker nodes, load balancers, and related AWS infrastructure
   - Owner: Aleksandr Agishev
 
-• 'cncf_report' - cloud report exadmin.github.io/opensource_team_monitor
+• 'cncf_report' - CNCF cloud report (exadmin.github.io/opensource_team_monitor)
+  - Resources: S3 storage, static site hosting (CloudFront), and supporting AWS services
   - Owner: Ilya Smirnov
 
-• 'github-runner' - Obsolete, previously used by Opesearch autotests
+• 'github-runner' - Obsolete; previously used by OpenSearch autotests
+  - Resources: EC2 instances running ephemeral GitHub Actions runners
   - Owner: Sergey Ivanov
 
-• 'pioneer' - Qubership sandbox cluster and related resources
+• 'pioneer' - Qubership sandbox environment
+  - Resources: EKS Kubernetes cluster (VPC, NAT gateway, node groups, EBS volumes, ELB), and related resources
   - Owner: Qubership DevOps team
 
-• 'qstp' - ATP project
+• 'qstp' - ATP (Automated Testing Platform) project
+  - Resources: EKS Kubernetes cluster, S3 bucket for test results (qstp-results), and related infrastructure
   - Owner: Denis Arychkov
 
 Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""
