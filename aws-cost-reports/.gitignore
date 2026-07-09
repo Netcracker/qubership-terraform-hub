@@ -43,3 +43,4 @@ terraform.rc
 
 # Lambda deployment artifacts
 **/lambda/**/function.zip
+**/lambda/**/__pycache__/
