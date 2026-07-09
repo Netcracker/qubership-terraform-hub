@@ -426,8 +426,7 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
 
 • 'untagged' - Resources WITHOUT the 'cost-usage' tag. This includes:
   - Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)
-  - Shared or legacy AWS resources not assigned to a project tag, e.g. VPC/networking
-    (NAT gateways, subnets), S3 buckets, Route 53, CloudWatch, and other untagged infrastructure.
+  - Any resources without cost-usage tag, e.g. Lambda (qstp-s3-notification until tagged).
 
 • 'common' - Shared infrastructure resources used across multiple projects
   - Resources: shared databases, VPC/networking, monitoring tools (Prometheus, Grafana, etc.)
@@ -452,8 +451,9 @@ def generate_xls(tag_values, dates, cost_data, start_date, end_date):
   - Resources: EKS Kubernetes cluster (VPC, NAT gateway, node groups, EBS volumes, ELB), and related resources
   - Owner: Qubership DevOps team
 
-• 'qstp' - ATP (Automated Testing Platform) project
-  - Resources: EKS Kubernetes cluster, S3 bucket for test results (qstp-results), and related infrastructure
+• 'qstp' - ATP project
+  - Resources: S3 buckets (qstp-results, qstp-consul), Lambda (qstp-s3-notification —
+    triggers GitHub Actions on new test results), and related infrastructure
   - Owner: Denis Arychkov
 
 Note: The 'untagged' line typically shows a significant spike on the 1st of the month due to the TAX fee application, while other lines represent properly tagged project resources."""

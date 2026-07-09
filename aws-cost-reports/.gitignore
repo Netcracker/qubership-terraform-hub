@@ -40,3 +40,7 @@ terraform.rc
 *.csv
 *.xls
 *.xlsx
+
+# Lambda deployment artifacts
+**/lambda/**/function.zip
+**/lambda/**/__pycache__/
