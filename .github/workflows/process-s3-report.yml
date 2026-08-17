@@ -110,6 +110,51 @@ jobs:
             head -20 "$FIRST_XML"
           fi
 
+      - name: Calculate test pass rate from JSON files
+        id: pass_rate
+        run: |
+          # Find all JSON files in the downloaded results
+          JSON_FILES=$(find $SOURCE_DIR -name "*.json" -type f)
+          
+          if [ -z "$JSON_FILES" ]; then
+            echo "No JSON files found"
+            echo "PASS_RATE=No data" >> $GITHUB_OUTPUT
+            echo "TOTAL_TESTS=0" >> $GITHUB_OUTPUT
+            echo "PASSED_TESTS=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Initialize counters
+          TOTAL=0
+          PASSED=0
+          
+          # Loop through each JSON file and extract status
+          for file in $JSON_FILES; do
+            # Try common status fields: .status, .result, .state
+            status=$(jq -r '.status // .result // .state // "unknown"' "$file" 2>/dev/null || echo "unknown")
+            # Normalize to lowercase for comparison
+            status_lower=$(echo "$status" | tr '[:upper:]' '[:lower:]')
+            
+            if [ "$status_lower" = "passed" ] || [ "$status_lower" = "pass" ] || [ "$status_lower" = "success" ]; then
+              PASSED=$((PASSED + 1))
+            fi
+            TOTAL=$((TOTAL + 1))
+          done
+          
+          # Calculate pass rate percentage
+          if [ $TOTAL -gt 0 ]; then
+            # Use bc for floating-point calculation (available on GitHub runners)
+            PASS_RATE=$(echo "scale=2; $PASSED * 100 / $TOTAL" | bc)
+            echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_OUTPUT
+          else
+            echo "PASS_RATE=No tests" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "TOTAL_TESTS=$TOTAL" >> $GITHUB_OUTPUT
+          echo "PASSED_TESTS=$PASSED" >> $GITHUB_OUTPUT
+          
+          echo "📊 Test Summary: Total=$TOTAL, Passed=$PASSED, Rate=${PASS_RATE}%"
+
       - name: Install Java and Allure
         run: |
           # Update and install Java
@@ -275,27 +320,28 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Allure reports - ${{ github.repository }} - ${{ steps.parse_path.outputs.TEST_TYPE }}"
+          subject: "Allure reports - ${{ github.repository }} - ${{ steps.parse_path.outputs.TEST_TYPE }} - Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}"
           body: |
             Hello,
-            
+      
             The Allure report has been successfully generated for **${{ steps.parse_path.outputs.TEST_TYPE }}**.
-            
-            📊 REPORT DETAILS:
+      
+            📊 **Test Results:**
+            - Total Tests: ${{ steps.pass_rate.outputs.TOTAL_TESTS }}
+            - Passed: ${{ steps.pass_rate.outputs.PASSED_TESTS }}
+            - **Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}**
+      
+            REPORT DETAILS:
             - Test Type: ${{ steps.parse_path.outputs.TEST_TYPE }}
             - Timestamp: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
-            
-            📎 DOWNLOAD LINKS:
-            Single report file: 
-            ${{ env.SINGLE_URL }}
-            
-            Multi report file:  
-            ${{ env.MULTI_URL }}
-            
-            Direct link for usage with WinSCP or analog viewers (needs authorization):
-            ${{ env.DIRECT_S3_LINK }}
-
-            Best regards, DevOps Team
+      
+            DOWNLOAD LINKS:
+            Single report file: ${{ env.SINGLE_URL }}
+            Multi report file: ${{ env.MULTI_URL }}
+            Direct link for usage with WinSCP or analog viewers (needs authorization): ${{ env.DIRECT_S3_LINK }}
+      
+            Best regards,
+            DevOps Team
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
           from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
 
