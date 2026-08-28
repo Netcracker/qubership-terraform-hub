@@ -162,10 +162,15 @@ REPORT_TEMPLATE = """
 
     <h2 style="margin:2rem 0 1rem;font-size:1.1rem">Usage by type</h2>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
-      Each row is a single usage type (consistent unit). Expand a row to see resource-level
-      breakdown when Cost Explorer resource data is available (opt-in, typically last 14 days).
+      Each row is a single usage type (consistent unit). Expand a row (▸) to see per-resource
+      breakdown when Cost Explorer resource-level data is available (opt-in; last ~14 days from today).
       Rows under $0.01 omitted; top {{ usage_rows|length }} by cost.
     </p>
+    {% if resources_status %}
+    <p style="background:rgba(56,189,248,0.08);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
+      {{ resources_status }}
+    </p>
+    {% endif %}
     <table>
       <thead>
         <tr>
@@ -430,18 +435,31 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_period(start_str: str, end_str: str) -> tuple[date, date]:
+    """Return [start, end) for Cost Explorer (End is exclusive in the API).
+
+    User-provided end_date is treated as **inclusive** (the last day of the report).
+    """
     today = date.today()
     if start_str and end_str:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+        # Inclusive end from the user → exclusive end for the API
+        end = datetime.strptime(end_str, "%Y-%m-%d").date() + timedelta(days=1)
     elif start_str:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
         end = today + timedelta(days=1)
+    elif end_str:
+        # Only end provided: from first of that month through inclusive end
+        end_inclusive = datetime.strptime(end_str, "%Y-%m-%d").date()
+        start = end_inclusive.replace(day=1)
+        end = end_inclusive + timedelta(days=1)
     else:
         start = today.replace(day=1)
         end = today + timedelta(days=1)
     if end <= start:
-        raise SystemExit(f"Invalid period: start={start} end={end}")
+        raise SystemExit(
+            f"Invalid period: start={start} end_exclusive={end} "
+            f"(user end must be on or after start)"
+        )
     return start, end
 
 
@@ -564,24 +582,40 @@ def fetch_resources_for_services(
     start: date,
     end: date,
     services: list[str],
-) -> dict[str, list[dict]]:
+) -> tuple[dict[str, list[dict]], str]:
     """Resource-level breakdown via GetCostAndUsageWithResources.
 
-    Requires Cost Explorer resource-level data (opt-in). Data is typically only
-    available for the last ~14 days. Returns {service: [resource rows]}.
+    Requires Cost Explorer resource-level data (opt-in in CE preferences).
+    Resource-level daily data is only retained for approximately the last 14 days
+    relative to *today*, not relative to the report period.
+
+    Returns (by_service, status_message).
     """
-    # Clamp to last 14 days (resource-level daily data window)
     today = date.today()
-    res_end = min(end, today + timedelta(days=1))
-    res_start = max(start, res_end - timedelta(days=14))
+    # Rolling window from today (not from report end)
+    window_end = today + timedelta(days=1)
+    window_start = today - timedelta(days=13)  # ~14 calendar days inclusive
+
+    res_start = max(start, window_start)
+    res_end = min(end, window_end)
+
     if res_end <= res_start:
-        return {}
+        last_day = end - timedelta(days=1)
+        msg = (
+            f"No resource-level detail: Cost Explorer only keeps resource data for the "
+            f"last ~14 days (about {window_start.isoformat()} → {today.isoformat()}). "
+            f"Requested period {start.isoformat()} → {last_day.isoformat()} is outside that window. "
+            f"Re-run for a recent period, or enable/use CUR for historical resource costs."
+        )
+        print(f"  {msg}")
+        return {}, msg
 
     note = (
         f"resource data window {res_start.isoformat()} → "
         f"{(res_end - timedelta(days=1)).isoformat()}"
     )
     by_service: dict[str, list[dict]] = {}
+    errors: list[str] = []
 
     for service in services:
         try:
@@ -602,10 +636,13 @@ def fetch_resources_for_services(
             )
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
+            msg = f"{service}: {code}"
             print(f"  resource-level skip for {service}: {code} {e}")
+            errors.append(msg)
             continue
         except Exception as e:
             print(f"  resource-level skip for {service}: {e}")
+            errors.append(f"{service}: {e}")
             continue
 
         agg: dict[tuple[str, str], dict] = defaultdict(
@@ -648,7 +685,21 @@ def fetch_resources_for_services(
             by_service[service] = rows[:40]
             print(f"  resources for {service}: {len(rows)} (showing up to 40)")
 
-    return by_service
+    if by_service:
+        status = f"Resource-level detail loaded for {len(by_service)} service(s) ({note})."
+    elif errors:
+        status = (
+            "Resource-level detail unavailable. "
+            "Enable resource-level data in Cost Explorer preferences, ensure ce:GetCostAndUsageWithResources "
+            f"permission, and use a period within the last ~14 days. Errors: {'; '.join(errors[:5])}"
+        )
+    else:
+        status = (
+            f"No per-resource rows returned ({note}). "
+            "Resource-level data may not be enabled for these services in Cost Explorer preferences."
+        )
+    print(f"  {status}")
+    return by_service, status
 
 
 def attach_resources_to_usage_rows(
@@ -687,6 +738,7 @@ def build_report_html(
     services: list[dict],
     usage_rows: list[dict],
     run_id: str,
+    resources_status: str = "",
 ) -> tuple[str, float, str]:
     total = sum(s["unblended"] for s in services)
     for s in services:
@@ -702,6 +754,7 @@ def build_report_html(
         total_cost=total,
         services=services,
         usage_rows=usage_rows,
+        resources_status=resources_status,
         start=start.isoformat(),
         end=last_day.isoformat(),
         days=(end - start).days,
@@ -820,14 +873,16 @@ def main() -> None:
     ce = boto3.client("ce", region_name="us-east-1")
     daily, services, usage_rows = fetch_costs(ce, start, end)
 
-    # Resource-level detail (opt-in in Cost Explorer; ~14-day window)
+    # Resource-level detail (opt-in in Cost Explorer; ~14-day rolling window from today)
     top_services = [s["name"] for s in services[:15]]
     print(f"Fetching resource-level data for {len(top_services)} services...")
-    resources_by_service = fetch_resources_for_services(ce, start, end, top_services)
+    resources_by_service, resources_status = fetch_resources_for_services(
+        ce, start, end, top_services
+    )
     attach_resources_to_usage_rows(usage_rows, resources_by_service)
 
     report_html, total_cost, period_label = build_report_html(
-        start, end, daily, services, usage_rows, args.run_id
+        start, end, daily, services, usage_rows, args.run_id, resources_status
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
