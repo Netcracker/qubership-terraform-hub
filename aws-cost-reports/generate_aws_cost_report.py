@@ -893,22 +893,13 @@ def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str)
 
 
 def write_job_summary(
-    period_label: str,
-    total_cost: float,
-    generated_at: str,
     report_s3: str,
     index_s3: str,
 ) -> None:
-    """Write a short Job Summary without temporary (presigned) links."""
+    """Write Job Summary with S3 paths only (no cost figures)."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     lines = [
         "## AWS Cost Report",
-        "",
-        f"**Period:** {period_label}  ",
-        f"**Total:** ${total_cost:.2f}  ",
-        f"**Generated:** {generated_at}  ",
-        "",
-        "### S3 paths",
         "",
         f"- Report: `{report_s3}`",
         f"- Index: `{index_s3}`",
@@ -1012,9 +1003,6 @@ def main() -> None:
     index_s3 = f"s3://{args.s3_bucket}/{index_key}"
 
     write_job_summary(
-        period_label=period_label,
-        total_cost=total_cost,
-        generated_at=generated_at,
         report_s3=report_s3,
         index_s3=index_s3,
     )
