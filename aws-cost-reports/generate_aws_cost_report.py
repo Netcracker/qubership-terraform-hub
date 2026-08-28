@@ -132,7 +132,7 @@ REPORT_TEMPLATE = """
 
     <div class="chart-card">
       <h2 style="margin-bottom:1rem;font-size:1.1rem">Daily spend</h2>
-      <canvas id="dailyChart" height="100"></canvas>
+      <canvas id="dailyChart" height="140"></canvas>
     </div>
 
     <h2 style="margin-bottom:1rem;font-size:1.1rem">By service</h2>
@@ -234,35 +234,78 @@ REPORT_TEMPLATE = """
 
   <script>
     const dailyLabels = {{ daily_labels|tojson }};
-    const dailyCosts  = {{ daily_costs|tojson }};
+    const chartSeries = {{ chart_series|tojson }};
+    const datasets = chartSeries.map((s) => ({
+      label: s.label,
+      data: s.data,
+      backgroundColor: s.backgroundColor,
+      borderWidth: 0,
+      borderRadius: 2,
+      stack: 'daily',
+    }));
     new Chart(document.getElementById('dailyChart'), {
       type: 'bar',
-      data: {
-        labels: dailyLabels,
-        datasets: [{
-          label: 'Cost ($)',
-          data: dailyCosts,
-          backgroundColor: 'rgba(56, 189, 248, 0.6)',
-          borderColor: 'rgb(56, 189, 248)',
-          borderWidth: 1,
-          borderRadius: 4
-        }]
-      },
+      data: { labels: dailyLabels, datasets },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        maintainAspectRatio: true,
+        interaction: {
+          mode: 'index',
+          axis: 'x',
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              color: '#94a3b8',
+              boxWidth: 12,
+              boxHeight: 12,
+              padding: 16,
+              font: { size: 12 },
+            },
+          },
+          tooltip: {
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            titleColor: '#e2e8f0',
+            bodyColor: '#e2e8f0',
+            borderColor: '#334155',
+            borderWidth: 1,
+            padding: 12,
+            callbacks: {
+              title: (items) => items.length ? items[0].label : '',
+              label: (ctx) => {
+                const v = ctx.parsed.y || 0;
+                if (v < 0.005) return null;
+                return ` ${ctx.dataset.label}: $${v.toFixed(2)}`;
+              },
+              footer: (items) => {
+                const total = items.reduce((s, i) => s + (i.parsed.y || 0), 0);
+                return `Total: $${total.toFixed(2)}`;
+              },
+            },
+            footerColor: '#38bdf8',
+            footerFont: { weight: 'bold' },
+          },
+        },
         scales: {
           y: {
+            stacked: true,
             beginAtZero: true,
-            ticks: { color: '#94a3b8' },
-            grid: { color: '#334155' }
+            ticks: {
+              color: '#94a3b8',
+              callback: (v) => '$' + v,
+            },
+            grid: { color: '#334155' },
           },
           x: {
+            stacked: true,
             ticks: { color: '#94a3b8', maxRotation: 45 },
-            grid: { display: false }
-          }
-        }
-      }
+            grid: { display: false },
+          },
+        },
+      },
     });
   </script>
 </body>
@@ -415,21 +458,84 @@ def resolve_period(start_str: str, end_str: str) -> tuple[date, date]:
 
 def fetch_costs(
     client, start: date, end: date, tag_key: str = "cost-usage"
-) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
-    """Return (daily, services, usage_rows, tag_rows).
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[str], list[dict]]:
+    """Return (daily, services, usage_rows, tag_rows, daily_labels, chart_series).
 
     usage_rows are grouped by SERVICE + USAGE_TYPE so quantity has a consistent unit.
     tag_rows are grouped by cost allocation tag `tag_key`.
+    chart_series is stacked daily spend by top services for Chart.js.
     """
+    # Daily costs broken down by service (for stacked chart)
     daily_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
         Granularity="DAILY",
-        Metrics=["UnblendedCost", "AmortizedCost"],
+        Metrics=["UnblendedCost"],
+        GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
     )
-    daily: list[dict] = []
+    daily_labels: list[str] = []
+    # date -> {service: cost}
+    daily_by_svc: dict[str, dict[str, float]] = {}
+    svc_totals: dict[str, float] = defaultdict(float)
     for r in daily_resp["ResultsByTime"]:
-        amount = float(r["Total"].get("UnblendedCost", {}).get("Amount", 0) or 0)
-        daily.append({"date": r["TimePeriod"]["Start"], "cost": amount})
+        day = r["TimePeriod"]["Start"]
+        daily_labels.append(day)
+        daily_by_svc[day] = {}
+        for g in r.get("Groups", []):
+            name = g["Keys"][0]
+            amount = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            if amount < 0.005:
+                continue
+            daily_by_svc[day][name] = amount
+            svc_totals[name] += amount
+
+    # Top services for the chart; rest → "Other"
+    TOP_CHART_SERVICES = 8
+    top_svc_names = [
+        n for n, _ in sorted(svc_totals.items(), key=lambda x: -x[1])[:TOP_CHART_SERVICES]
+    ]
+    top_set = set(top_svc_names)
+
+    # Palette close to Cost Explorer style
+    CHART_COLORS = [
+        "rgba(56, 189, 248, 0.85)",   # sky
+        "rgba(52, 211, 153, 0.85)",   # emerald
+        "rgba(251, 191, 36, 0.85)",   # amber
+        "rgba(248, 113, 113, 0.85)",  # red
+        "rgba(167, 139, 250, 0.85)",  # violet
+        "rgba(251, 146, 60, 0.85)",   # orange
+        "rgba(45, 212, 191, 0.85)",   # teal
+        "rgba(244, 114, 182, 0.85)",  # pink
+        "rgba(148, 163, 184, 0.85)",  # slate (Other)
+    ]
+
+    chart_series: list[dict] = []
+    for i, name in enumerate(top_svc_names):
+        chart_series.append(
+            {
+                "label": name,
+                "data": [round(daily_by_svc.get(d, {}).get(name, 0.0), 2) for d in daily_labels],
+                "backgroundColor": CHART_COLORS[i % (len(CHART_COLORS) - 1)],
+            }
+        )
+    # Other = everything not in top
+    other_data = []
+    for d in daily_labels:
+        other = sum(v for k, v in daily_by_svc.get(d, {}).items() if k not in top_set)
+        other_data.append(round(other, 2))
+    if any(x > 0 for x in other_data):
+        chart_series.append(
+            {
+                "label": "Other",
+                "data": other_data,
+                "backgroundColor": CHART_COLORS[-1],
+            }
+        )
+
+    # Keep a simple daily total list for compatibility (optional)
+    daily: list[dict] = [
+        {"date": d, "cost": round(sum(daily_by_svc.get(d, {}).values()), 2)}
+        for d in daily_labels
+    ]
 
     service_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
@@ -559,7 +665,7 @@ def fetch_costs(
     except ClientError as e:
         print(f"  tag group-by skipped ({tag_key}): {e}")
 
-    return daily, services, usage_rows, tag_rows
+    return daily, services, usage_rows, tag_rows, daily_labels, chart_series
 
 
 def build_report_html(
@@ -570,6 +676,8 @@ def build_report_html(
     usage_rows: list[dict],
     run_id: str,
     tag_rows: list[dict] | None = None,
+    daily_labels: list[str] | None = None,
+    chart_series: list[dict] | None = None,
 ) -> tuple[str, float, str]:
     total = sum(s["unblended"] for s in services)
     for s in services:
@@ -578,6 +686,9 @@ def build_report_html(
     last_day = end - timedelta(days=1)
     period_label = f"{start.strftime('%d %b %Y')} — {last_day.strftime('%d %b %Y')}"
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    labels = daily_labels if daily_labels is not None else [d["date"] for d in daily]
+    series = chart_series or []
 
     html = Template(REPORT_TEMPLATE).render(
         period_label=period_label,
@@ -589,8 +700,8 @@ def build_report_html(
         start=start.isoformat(),
         end=last_day.isoformat(),
         days=(end - start).days,
-        daily_labels=[d["date"] for d in daily],
-        daily_costs=[round(d["cost"], 2) for d in daily],
+        daily_labels=labels,
+        chart_series=series,
         run_id=run_id,
     )
     return html, total, period_label
@@ -665,7 +776,7 @@ def main() -> None:
     print(f"Period: {start} → {last_day}")
 
     ce = boto3.client("ce", region_name="us-east-1")
-    daily, services, usage_rows, tag_rows = fetch_costs(ce, start, end, tag_key="cost-usage")
+    daily, services, usage_rows, tag_rows, daily_labels, chart_series = fetch_costs(ce, start, end, tag_key="cost-usage")
 
     report_html, total_cost, period_label = build_report_html(
         start,
@@ -675,6 +786,8 @@ def main() -> None:
         usage_rows,
         args.run_id,
         tag_rows=tag_rows,
+        daily_labels=daily_labels,
+        chart_series=chart_series,
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
