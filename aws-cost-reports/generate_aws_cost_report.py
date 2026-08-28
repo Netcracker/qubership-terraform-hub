@@ -198,128 +198,33 @@ REPORT_TEMPLATE = """
 
     <h2 style="margin:2rem 0 1rem;font-size:1.1rem">Usage by type</h2>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
-      Each row is a single usage type (consistent unit). Expand a row (▸) to see per-resource
-      breakdown when Cost Explorer resource-level data is available (opt-in; last ~14 days from today).
-      Rows under $0.01 omitted; top {{ usage_rows|length }} by cost.
+      Each row is a single usage type (consistent unit). Rows under $0.01 omitted;
+      top {{ usage_rows|length }} by cost.
     </p>
-    {% if resources_status %}
-    <p style="background:rgba(56,189,248,0.08);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
-      {{ resources_status }}
-    </p>
-    {% endif %}
-    <table class="usage-table">
+    <table>
       <thead>
         <tr>
-          <td colspan="7" style="padding:0;border-bottom:1px solid var(--border)">
-            <div class="usage-summary usage-header">
-              <span class="chev"></span>
-              <span class="c-service">Service</span>
-              <span class="c-region">Region</span>
-              <span class="c-type">Usage type</span>
-              <span class="c-cost">Unblended</span>
-              <span class="c-qty">Quantity</span>
-              <span class="c-unit">Unit</span>
-            </div>
-          </td>
+          <th>Service</th>
+          <th>Region</th>
+          <th>Usage type</th>
+          <th>Unblended</th>
+          <th>Quantity</th>
+          <th>Unit</th>
         </tr>
       </thead>
       <tbody>
         {% for u in usage_rows %}
         <tr>
-          <td colspan="7" style="padding:0;border-bottom:1px solid var(--border)">
-            <details class="usage-details" {% if u.resources %}data-has-resources="1"{% endif %}>
-              <summary class="usage-summary">
-                <span class="chev">{% if u.resources %}▸{% else %}·{% endif %}</span>
-                <span class="c-service">{{ u.service }}</span>
-                <span class="c-region">{{ u.region }}</span>
-                <span class="c-type">{{ u.usage_type }}</span>
-                <span class="c-cost cost">${{ "%.2f"|format(u.unblended) }}</span>
-                <span class="c-qty cost">{{ u.quantity_fmt }}</span>
-                <span class="c-unit">{{ u.unit }}</span>
-              </summary>
-              {% if u.resources %}
-              <div class="resource-panel">
-                <div class="resource-note">
-                  Resources ({{ u.resources|length }}){% if u.resources_note %} · {{ u.resources_note }}{% endif %}
-                </div>
-                <table class="resource-table">
-                  <thead>
-                    <tr>
-                      <th>Resource ID</th>
-                      <th>Unblended</th>
-                      <th>Quantity</th>
-                      <th>Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for r in u.resources %}
-                    <tr>
-                      <td class="mono">{{ r.resource_id }}</td>
-                      <td class="cost">${{ "%.2f"|format(r.unblended) }}</td>
-                      <td class="cost">{{ r.quantity_fmt }}</td>
-                      <td>{{ r.unit }}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-              {% endif %}
-            </details>
-          </td>
+          <td>{{ u.service }}</td>
+          <td>{{ u.region }}</td>
+          <td>{{ u.usage_type }}</td>
+          <td class="cost">${{ "%.2f"|format(u.unblended) }}</td>
+          <td class="cost">{{ u.quantity_fmt }}</td>
+          <td>{{ u.unit }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <style>
-      details.usage-details { width: 100%; }
-      .usage-summary {
-        display: grid;
-        grid-template-columns: 1.5rem minmax(10rem,1.6fr) 7rem minmax(8rem,1.4fr) 6rem 6rem 5rem;
-        gap: 0.5rem;
-        align-items: center;
-        padding: 0.75rem 1rem;
-      }
-      details.usage-details > summary {
-        list-style: none;
-        cursor: default;
-      }
-      .usage-header {
-        background: #0f172a;
-        color: var(--muted);
-        font-weight: 500;
-        font-size: 0.85rem;
-        padding: 0.75rem 1rem;
-      }
-      .usage-header .c-cost,
-      .usage-header .c-qty { text-align: right; }
-      details.usage-details[data-has-resources] > summary { cursor: pointer; }
-      details.usage-details > summary::-webkit-details-marker { display: none; }
-      details.usage-details[open][data-has-resources] .chev { color: var(--accent); }
-      details.usage-details[open][data-has-resources] .chev::before { content: "▾"; }
-      details.usage-details[data-has-resources]:not([open]) .chev::before { content: "▸"; }
-      .chev { color: var(--border); font-size: 0.85rem; }
-      .c-service, .c-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .c-region, .c-unit { color: var(--muted); font-size: 0.9rem; }
-      .c-cost, .c-qty { text-align: right; font-variant-numeric: tabular-nums; }
-      .resource-panel {
-        padding: 0 1rem 1rem 2.5rem;
-        background: rgba(15, 23, 42, 0.55);
-      }
-      .resource-note { font-size: 0.85rem; color: var(--muted); margin: 0.35rem 0 0.6rem; }
-      .resource-table {
-        width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        overflow: hidden;
-        border-collapse: collapse;
-      }
-      .resource-table th, .resource-table td {
-        padding: 0.5rem 0.75rem;
-        border-bottom: 1px solid var(--border);
-      }
-      .resource-table tr:last-child td { border-bottom: none; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
-    </style>
 
     <footer>
       Data from AWS Cost Explorer · UnblendedCost / AmortizedCost ·
@@ -608,8 +513,6 @@ def fetch_costs(
                 "quantity": qty,
                 "quantity_fmt": qty_fmt,
                 "unit": v["unit"],
-                "resources": [],
-                "resources_note": "",
             }
         )
     usage_rows.sort(key=lambda x: x["unblended"], reverse=True)
@@ -658,167 +561,6 @@ def fetch_costs(
 
     return daily, services, usage_rows, tag_rows
 
-def format_qty(qty: float) -> str:
-    if abs(qty) >= 1_000_000:
-        return f"{qty:,.0f}"
-    if abs(qty) >= 100:
-        return f"{qty:,.1f}"
-    return f"{qty:,.4g}"
-
-
-def fetch_resources_for_services(
-    client,
-    start: date,
-    end: date,
-    services: list[str],
-) -> tuple[dict[str, list[dict]], str]:
-    """Resource-level breakdown via GetCostAndUsageWithResources.
-
-    Requires Cost Explorer resource-level data (opt-in in CE preferences).
-    Resource-level daily data is only retained for approximately the last 14 days
-    relative to *today*, not relative to the report period.
-
-    Returns (by_service, status_message).
-    """
-    today = date.today()
-    # Rolling window from today (not from report end)
-    window_end = today + timedelta(days=1)
-    window_start = today - timedelta(days=13)  # ~14 calendar days inclusive
-
-    res_start = max(start, window_start)
-    res_end = min(end, window_end)
-
-    if res_end <= res_start:
-        last_day = end - timedelta(days=1)
-        msg = (
-            f"No resource-level detail: Cost Explorer only keeps resource data for the "
-            f"last ~14 days (about {window_start.isoformat()} → {today.isoformat()}). "
-            f"Requested period {start.isoformat()} → {last_day.isoformat()} is outside that window. "
-            f"Re-run for a recent period, or enable/use CUR for historical resource costs."
-        )
-        print(f"  {msg}")
-        return {}, msg
-
-    note = (
-        f"resource data window {res_start.isoformat()} → "
-        f"{(res_end - timedelta(days=1)).isoformat()}"
-    )
-    by_service: dict[str, list[dict]] = {}
-    errors: list[str] = []
-
-    for service in services:
-        try:
-            resp = client.get_cost_and_usage_with_resources(
-                TimePeriod={"Start": res_start.isoformat(), "End": res_end.isoformat()},
-                Granularity="DAILY",
-                Metrics=["UnblendedCost", "UsageQuantity"],
-                Filter={
-                    "Dimensions": {
-                        "Key": "SERVICE",
-                        "Values": [service],
-                    }
-                },
-                GroupBy=[
-                    {"Type": "DIMENSION", "Key": "RESOURCE_ID"},
-                    {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
-                ],
-            )
-        except ClientError as e:
-            code = e.response.get("Error", {}).get("Code", "")
-            msg = f"{service}: {code}"
-            print(f"  resource-level skip for {service}: {code} {e}")
-            errors.append(msg)
-            continue
-        except Exception as e:
-            print(f"  resource-level skip for {service}: {e}")
-            errors.append(f"{service}: {e}")
-            continue
-
-        agg: dict[tuple[str, str], dict] = defaultdict(
-            lambda: {"unblended": 0.0, "quantity": 0.0, "unit": "N/A"}
-        )
-        for r in resp.get("ResultsByTime", []):
-            for g in r.get("Groups", []):
-                keys = g.get("Keys") or []
-                if len(keys) < 2:
-                    continue
-                resource_id, usage_type = keys[0], keys[1]
-                if not resource_id or resource_id in ("NoResourceId", "NoResourceId$"):
-                    continue
-                unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
-                quantity = float(g["Metrics"]["UsageQuantity"]["Amount"])
-                unit = g["Metrics"]["UsageQuantity"].get("Unit") or "N/A"
-                key = (resource_id, usage_type)
-                agg[key]["unblended"] += unblended
-                agg[key]["quantity"] += quantity
-                if unit != "N/A":
-                    agg[key]["unit"] = unit
-
-        rows: list[dict] = []
-        for (resource_id, usage_type), v in agg.items():
-            if v["unblended"] < 0.01:
-                continue
-            rows.append(
-                {
-                    "resource_id": resource_id,
-                    "usage_type": usage_type,
-                    "unblended": v["unblended"],
-                    "quantity": v["quantity"],
-                    "quantity_fmt": format_qty(v["quantity"]),
-                    "unit": v["unit"],
-                    "_note": note,
-                }
-            )
-        rows.sort(key=lambda x: x["unblended"], reverse=True)
-        if rows:
-            by_service[service] = rows[:40]
-            print(f"  resources for {service}: {len(rows)} (showing up to 40)")
-
-    if by_service:
-        status = f"Resource-level detail loaded for {len(by_service)} service(s) ({note})."
-    elif errors:
-        status = (
-            "Resource-level detail unavailable. "
-            "Enable resource-level data in Cost Explorer preferences, ensure ce:GetCostAndUsageWithResources "
-            f"permission, and use a period within the last ~14 days. Errors: {'; '.join(errors[:5])}"
-        )
-    else:
-        status = (
-            f"No per-resource rows returned ({note}). "
-            "Resource-level data may not be enabled for these services in Cost Explorer preferences."
-        )
-    print(f"  {status}")
-    return by_service, status
-
-
-def attach_resources_to_usage_rows(
-    usage_rows: list[dict],
-    resources_by_service: dict[str, list[dict]],
-) -> None:
-    """Attach matching resources under each usage row (same service + usage_type)."""
-    for u in usage_rows:
-        all_for_svc = resources_by_service.get(u["service"]) or []
-        matched = [r for r in all_for_svc if r["usage_type"] == u["usage_type"]]
-        # Fallback: if no exact usage_type match, show top resources for the service
-        if not matched and all_for_svc:
-            matched = all_for_svc[:15]
-            note = (all_for_svc[0].get("_note") or "") + " · filtered by service only"
-        else:
-            note = (matched[0].get("_note") if matched else "") or ""
-        u["resources"] = [
-            {
-                "resource_id": r["resource_id"],
-                "unblended": r["unblended"],
-                "quantity_fmt": r["quantity_fmt"],
-                "unit": r["unit"],
-            }
-            for r in matched[:25]
-        ]
-        u["resources_note"] = note if u["resources"] else ""
-
-
-
-
 
 def build_report_html(
     start: date,
@@ -827,7 +569,6 @@ def build_report_html(
     services: list[dict],
     usage_rows: list[dict],
     run_id: str,
-    resources_status: str = "",
     tag_rows: list[dict] | None = None,
 ) -> tuple[str, float, str]:
     total = sum(s["unblended"] for s in services)
@@ -845,7 +586,6 @@ def build_report_html(
         services=services,
         usage_rows=usage_rows,
         tag_rows=tag_rows or [],
-        resources_status=resources_status,
         start=start.isoformat(),
         end=last_day.isoformat(),
         days=(end - start).days,
@@ -927,14 +667,6 @@ def main() -> None:
     ce = boto3.client("ce", region_name="us-east-1")
     daily, services, usage_rows, tag_rows = fetch_costs(ce, start, end, tag_key="cost-usage")
 
-    # Resource-level detail (opt-in in Cost Explorer; ~14-day rolling window from today)
-    top_services = [s["name"] for s in services[:15]]
-    print(f"Fetching resource-level data for {len(top_services)} services...")
-    resources_by_service, resources_status = fetch_resources_for_services(
-        ce, start, end, top_services
-    )
-    attach_resources_to_usage_rows(usage_rows, resources_by_service)
-
     report_html, total_cost, period_label = build_report_html(
         start,
         end,
@@ -942,7 +674,6 @@ def main() -> None:
         services,
         usage_rows,
         args.run_id,
-        resources_status,
         tag_rows=tag_rows,
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
