@@ -1,0 +1,617 @@
+#!/usr/bin/env python3
+"""
+AWS Cost Report Generator (private S3)
+- Fetches data from Cost Explorer
+- Generates HTML report with daily chart
+- Uploads to a private S3 bucket with full history
+- Writes presigned URLs to GitHub Actions Job Summary
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+import boto3
+from botocore.exceptions import ClientError
+from jinja2 import Template
+
+REPORT_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Cost Report — {{ period_label }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); margin-bottom: 1.5rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-bottom: 1.5rem; font-size: 0.9rem; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .card .label { color: var(--muted); font-size: 0.85rem; }
+    .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 0.25rem; }
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th { background: #0f172a; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(56, 189, 248, 0.05); }
+    .cost { font-variant-numeric: tabular-nums; }
+    .bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav"><a href="../index.html">← All reports</a></div>
+    <h1>AWS Cost Report</h1>
+    <p class="subtitle">{{ period_label }} · generated {{ generated_at }}</p>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Total cost</div>
+        <div class="value">${{ "%.2f"|format(total_cost) }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Services</div>
+        <div class="value">{{ services|length }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Period</div>
+        <div class="value" style="font-size:1rem">{{ start }} → {{ end }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Days</div>
+        <div class="value">{{ days }}</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2 style="margin-bottom:1rem;font-size:1.1rem">Daily spend</h2>
+      <canvas id="dailyChart" height="100"></canvas>
+    </div>
+
+    <h2 style="margin-bottom:1rem;font-size:1.1rem">By service</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Unblended</th>
+          <th>Amortized</th>
+          <th>Usage</th>
+          <th>Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in services %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td class="cost">${{ "%.2f"|format(s.unblended) }}</td>
+          <td class="cost">${{ "%.2f"|format(s.amortized) }}</td>
+          <td>{{ s.usage }}</td>
+          <td>
+            {{ "%.1f"|format(s.share) }}%
+            <div class="bar"><div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <footer>
+      Data from AWS Cost Explorer · UnblendedCost / AmortizedCost ·
+      run #{{ run_id }}
+    </footer>
+  </div>
+
+  <script>
+    const dailyLabels = {{ daily_labels|tojson }};
+    const dailyCosts  = {{ daily_costs|tojson }};
+    new Chart(document.getElementById('dailyChart'), {
+      type: 'bar',
+      data: {
+        labels: dailyLabels,
+        datasets: [{
+          label: 'Cost ($)',
+          data: dailyCosts,
+          backgroundColor: 'rgba(56, 189, 248, 0.6)',
+          borderColor: 'rgb(56, 189, 248)',
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#94a3b8' },
+            grid: { color: '#334155' }
+          },
+          x: {
+            ticks: { color: '#94a3b8', maxRotation: 45 },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
+"""
+
+INDEX_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Cost Reports — History</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--muted); margin-bottom: 2rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    th, td {
+      padding: 0.85rem 1.1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th { background: #0f172a; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(56, 189, 248, 0.05); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .cost { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+    }
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AWS Cost Reports</h1>
+    <p class="subtitle">Report history · updated {{ generated_at }}</p>
+
+    {% if reports %}
+    <table>
+      <thead>
+        <tr>
+          <th>Period</th>
+          <th>Generated</th>
+          <th>Cost</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td>
+            {{ r.period_label }}
+            {% if loop.first %}<span class="badge">latest</span>{% endif %}
+          </td>
+          <td>{{ r.generated_at }}</td>
+          <td class="cost">${{ "%.2f"|format(r.total_cost) }}</td>
+          <td><a href="{{ r.path }}">Open →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted)">No reports yet.</p>
+    {% endif %}
+
+    <footer>
+      Stored in a private S3 bucket · access only for authorized users
+    </footer>
+  </div>
+</body>
+</html>
+"""
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Generate AWS cost report and upload to S3")
+    p.add_argument("--start-date", default="")
+    p.add_argument("--end-date", default="")
+    p.add_argument("--s3-bucket", required=True)
+    p.add_argument("--s3-prefix", default="aws-cost-reports")
+    p.add_argument("--run-id", default="local")
+    p.add_argument("--local-dir", default="", help="Also write files locally (optional)")
+    p.add_argument(
+        "--presign-hours",
+        type=int,
+        default=4,
+        help="Hours for presigned URLs (0 = skip). Default: 4",
+    )
+    return p.parse_args()
+
+
+def resolve_period(start_str: str, end_str: str) -> tuple[date, date]:
+    today = date.today()
+    if start_str and end_str:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+    elif start_str:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = today + timedelta(days=1)
+    else:
+        start = today.replace(day=1)
+        end = today + timedelta(days=1)
+    if end <= start:
+        raise SystemExit(f"Invalid period: start={start} end={end}")
+    return start, end
+
+
+def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict]]:
+    daily_resp = client.get_cost_and_usage(
+        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+        Granularity="DAILY",
+        Metrics=["UnblendedCost", "AmortizedCost"],
+    )
+    daily: list[dict] = []
+    for r in daily_resp["ResultsByTime"]:
+        amount = float(r["Total"].get("UnblendedCost", {}).get("Amount", 0) or 0)
+        daily.append({"date": r["TimePeriod"]["Start"], "cost": amount})
+
+    service_resp = client.get_cost_and_usage(
+        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+        Granularity="MONTHLY",
+        Metrics=["UnblendedCost", "AmortizedCost", "UsageQuantity"],
+        GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
+    )
+
+    agg: dict[str, dict] = defaultdict(
+        lambda: {"unblended": 0.0, "amortized": 0.0, "usage_amount": 0.0, "usage_unit": "N/A"}
+    )
+    for r in service_resp["ResultsByTime"]:
+        for g in r.get("Groups", []):
+            name = g["Keys"][0]
+            unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            amortized = float(g["Metrics"]["AmortizedCost"]["Amount"])
+            usage_amount = float(g["Metrics"]["UsageQuantity"]["Amount"])
+            usage_unit = g["Metrics"]["UsageQuantity"]["Unit"]
+            agg[name]["unblended"] += unblended
+            agg[name]["amortized"] += amortized
+            agg[name]["usage_amount"] += usage_amount
+            if usage_unit != "N/A":
+                agg[name]["usage_unit"] = usage_unit
+
+    services: list[dict] = []
+    for name, v in agg.items():
+        if v["unblended"] < 0.005 and v["amortized"] < 0.005:
+            continue
+        unit = v["usage_unit"]
+        usage_str = (
+            f"{v['usage_amount']:,.2f} {unit}" if unit != "N/A" else f"{v['usage_amount']:,.2f}"
+        )
+        services.append(
+            {
+                "name": name,
+                "unblended": v["unblended"],
+                "amortized": v["amortized"],
+                "usage": usage_str,
+            }
+        )
+    services.sort(key=lambda x: x["unblended"], reverse=True)
+    return daily, services
+
+
+def build_report_html(
+    start: date,
+    end: date,
+    daily: list[dict],
+    services: list[dict],
+    run_id: str,
+) -> tuple[str, float, str]:
+    total = sum(s["unblended"] for s in services)
+    for s in services:
+        s["share"] = (s["unblended"] / total * 100) if total > 0 else 0.0
+
+    last_day = end - timedelta(days=1)
+    period_label = f"{start.strftime('%d %b %Y')} — {last_day.strftime('%d %b %Y')}"
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    html = Template(REPORT_TEMPLATE).render(
+        period_label=period_label,
+        generated_at=generated_at,
+        total_cost=total,
+        services=services,
+        start=start.isoformat(),
+        end=last_day.isoformat(),
+        days=(end - start).days,
+        daily_labels=[d["date"] for d in daily],
+        daily_costs=[round(d["cost"], 2) for d in daily],
+        run_id=run_id,
+    )
+    return html, total, period_label
+
+
+def s3_key(prefix: str, *parts: str) -> str:
+    return "/".join(p.strip("/") for p in (prefix, *parts) if p)
+
+
+def list_existing_reports(s3, bucket: str, prefix: str) -> list[dict]:
+    """Scan S3 for report folders that contain meta.json."""
+    reports: list[dict] = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix.rstrip('/')}/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith("/meta.json"):
+                continue
+            try:
+                body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+                meta = json.loads(body)
+                folder = key[len(prefix.rstrip("/")) + 1 :].rsplit("/", 1)[0]
+                meta["path"] = f"{folder}/index.html"
+                reports.append(meta)
+            except (ClientError, json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: skip meta {key}: {e}")
+    reports.sort(key=lambda m: m.get("generated_at", ""), reverse=True)
+    return reports
+
+
+def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str) -> None:
+    extra = {
+        "ContentType": content_type,
+        "CacheControl": "no-cache" if key.endswith("index.html") else "max-age=3600",
+    }
+    # Private by default — do NOT set ACL public-read
+    s3.put_object(Bucket=bucket, Key=key, Body=body, **extra)
+    print(f"  uploaded s3://{bucket}/{key}")
+
+
+def make_presigned_url(s3, bucket: str, key: str, hours: int) -> str:
+    expires = max(1, min(hours * 3600, 7 * 24 * 3600))
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=expires,
+    )
+
+
+def write_job_summary(
+    period_label: str,
+    total_cost: float,
+    generated_at: str,
+    report_url: str | None,
+    index_url: str | None,
+    hours: int,
+    report_s3: str,
+    index_s3: str,
+) -> None:
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    lines = [
+        "## AWS Cost Report",
+        "",
+        f"**Period:** {period_label}  ",
+        f"**Total:** ${total_cost:.2f}  ",
+        f"**Generated:** {generated_at}  ",
+        "",
+    ]
+    if report_url and index_url:
+        lines += [
+            f"### Temporary links (valid ~{hours} h)",
+            "",
+            f"- [Open this report]({report_url})",
+            f"- [All reports history]({index_url})",
+            "",
+            "<details><summary>S3 paths</summary>",
+            "",
+            f"- `{report_s3}`",
+            f"- `{index_s3}`",
+            "",
+            "</details>",
+            "",
+            "> Links are private. Do not share them in public channels for long.",
+        ]
+    else:
+        lines += [
+            "Presigned URLs were not created (`--presign-hours 0`).",
+            "",
+            f"- Report: `{report_s3}`",
+            f"- Index: `{index_s3}`",
+        ]
+
+    text = "\n".join(lines) + "\n"
+    print("\n" + text)
+
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as f:
+            f.write(text)
+        print(f"Job Summary updated → {summary_path}")
+    else:
+        print("(GITHUB_STEP_SUMMARY not set — summary only printed above)")
+
+
+def main() -> None:
+    args = parse_args()
+    start, end = resolve_period(args.start_date, args.end_date)
+    last_day = end - timedelta(days=1)
+
+    print(f"Period: {start} → {last_day}")
+
+    ce = boto3.client("ce", region_name="us-east-1")
+    daily, services = fetch_costs(ce, start, end)
+
+    report_html, total_cost, period_label = build_report_html(
+        start, end, daily, services, args.run_id
+    )
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    folder_name = f"{start.isoformat()}_{last_day.isoformat()}"
+    meta = {
+        "period_start": start.isoformat(),
+        "period_end": last_day.isoformat(),
+        "period_label": period_label,
+        "total_cost": round(total_cost, 2),
+        "generated_at": generated_at,
+        "run_id": args.run_id,
+        "services_count": len(services),
+    }
+
+    s3 = boto3.client("s3")
+    prefix = args.s3_prefix.rstrip("/")
+
+    report_key = s3_key(prefix, folder_name, "index.html")
+    meta_key = s3_key(prefix, folder_name, "meta.json")
+    print(f"Uploading report → s3://{args.s3_bucket}/{report_key}")
+    upload_file(s3, args.s3_bucket, report_key, report_html, "text/html; charset=utf-8")
+    upload_file(
+        s3,
+        args.s3_bucket,
+        meta_key,
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        "application/json",
+    )
+
+    reports = list_existing_reports(s3, args.s3_bucket, prefix)
+    if not any(
+        r.get("period_start") == start.isoformat() and r.get("period_end") == last_day.isoformat()
+        for r in reports
+    ):
+        reports.insert(0, {**meta, "path": f"{folder_name}/index.html"})
+        reports.sort(key=lambda m: m.get("generated_at", ""), reverse=True)
+
+    index_html = Template(INDEX_TEMPLATE).render(
+        reports=reports,
+        generated_at=generated_at,
+    )
+    index_key = s3_key(prefix, "index.html")
+    print(f"Uploading history index → s3://{args.s3_bucket}/{index_key}")
+    upload_file(s3, args.s3_bucket, index_key, index_html, "text/html; charset=utf-8")
+
+    if args.local_dir:
+        local = Path(args.local_dir)
+        report_dir = local / folder_name
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "index.html").write_text(report_html, encoding="utf-8")
+        (report_dir / "meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"Local copy written to {report_dir}")
+
+    report_s3 = f"s3://{args.s3_bucket}/{report_key}"
+    index_s3 = f"s3://{args.s3_bucket}/{index_key}"
+
+    report_url = index_url = None
+    if args.presign_hours > 0:
+        report_url = make_presigned_url(s3, args.s3_bucket, report_key, args.presign_hours)
+        index_url = make_presigned_url(s3, args.s3_bucket, index_key, args.presign_hours)
+
+    write_job_summary(
+        period_label=period_label,
+        total_cost=total_cost,
+        generated_at=generated_at,
+        report_url=report_url,
+        index_url=index_url,
+        hours=args.presign_hours,
+        report_s3=report_s3,
+        index_s3=index_s3,
+    )
+
+    print(f"\nDone. Total cost: ${total_cost:.2f}")
+
+
+if __name__ == "__main__":
+    main()

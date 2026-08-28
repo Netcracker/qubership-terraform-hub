@@ -1,94 +1,68 @@
-name: Scheduled AWS cost reports
+name: AWS Cost Report
 
 on:
+  # 1st of each month at 06:00 UTC — report for the current month (through today)
   schedule:
-    - cron: "0 5 2 * *"
+    - cron: '0 6 1 * *'
+  # Manual run with optional date range
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYY-MM-DD). Empty = first day of current month'
+        required: false
+        type: string
+      end_date:
+        description: 'End date (YYYY-MM-DD, exclusive). Empty = tomorrow'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
-  aws-reporting:
+  generate-and-upload:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.9'
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          cd ./aws-cost-reports
-          pip install -r requirements.txt
+        run: pip install boto3 jinja2
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          # Cost Explorer API is only available in us-east-1; S3 client uses this region too
+          # unless the bucket is in another region (set AWS_REGION secret if needed)
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Generate cost report
+      - name: Generate report and upload to S3
+        env:
+          START_DATE: ${{ github.event.inputs.start_date }}
+          END_DATE: ${{ github.event.inputs.end_date }}
+          S3_BUCKET: 'cve-reports-dev'
+          S3_PREFIX: 'aws-cost-reports'
+          RUN_ID: ${{ github.run_id }}
+          # Presigned URL lifetime in hours (0 = skip). Override via repo variable PRESIGN_HOURS.
+          PRESIGN_HOURS: ${{ vars.PRESIGN_HOURS || '4' }}
         run: |
-          cd ./aws-cost-reports
-          python3.9 getreport.py
-
-      - name: Upload reports as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: cost-reports
-          path: |
-            ./aws-cost-reports/costs.csv
-            ./aws-cost-reports/costs.xlsx
-          retention-days: 30
-
-      - name: Extract total cost from CSV
-        id: extract_total
-        run: |
-          # Extract the TOTAL row from CSV (last row, last column)
-          TOTAL_COST=$(tail -n 1 ./aws-cost-reports/costs.csv | awk -F ',' '{print $NF}' | tr -d '"')
-          echo "total_cost=${TOTAL_COST}" >> $GITHUB_OUTPUT
-          echo "Extracted total cost: ${TOTAL_COST} USD"
-
-      - name: Get current date and report period
-        id: date
-        run: |
-          echo "current_date=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
-          echo "report_month=$(date -d 'last month' '+%B %Y')" >> $GITHUB_OUTPUT
-          echo "report_period=$(date -d 'last month' '+%Y-%m')" >> $GITHUB_OUTPUT
-
-      - name: Send email notification
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Qubership AWS Cost Report for ${{ steps.date.outputs.report_month }} - Total: $${{ steps.extract_total.outputs.total_cost }}"
-          body: |
-            Hello, Team
-
-            The monthly AWS cost report has been successfully generated.
-
-            📊 **REPORT SUMMARY**
-            - Period: ${{ steps.date.outputs.report_month }}
-            - Total Cost: $${{ steps.extract_total.outputs.total_cost }}
-            - Generated: ${{ steps.date.outputs.current_date }}
-            - Repository: ${{ github.repository }}
-
-            📎 **DOWNLOAD LINKS**
-            Artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Generated files:
-            • `costs.csv` (CSV format with daily breakdown)
-            • `costs.xlsx` (Excel format with formatting)
-
-            💡 *Note: The total cost includes all tagged and untagged resources for the period.*
-
-            Best regards,
-            AWS Cost Reporting System
-          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
-          from: "AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>"
+          if [ -z "$S3_BUCKET" ]; then
+            echo "::error::Secret S3_BUCKET is not set"
+            exit 1
+          fi
+          python aws-cost-reports/generate_aws_cost_report.py \
+            --start-date "${START_DATE:-}" \
+            --end-date "${END_DATE:-}" \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-prefix "$S3_PREFIX" \
+            --run-id "$RUN_ID" \
+            --presign-hours "${PRESIGN_HOURS}"
