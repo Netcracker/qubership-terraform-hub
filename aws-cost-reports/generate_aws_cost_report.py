@@ -142,7 +142,6 @@ REPORT_TEMPLATE = """
           <th>Service</th>
           <th>Unblended</th>
           <th>Amortized</th>
-          <th>Usage</th>
           <th>Share</th>
         </tr>
       </thead>
@@ -152,11 +151,38 @@ REPORT_TEMPLATE = """
           <td>{{ s.name }}</td>
           <td class="cost">${{ "%.2f"|format(s.unblended) }}</td>
           <td class="cost">${{ "%.2f"|format(s.amortized) }}</td>
-          <td>{{ s.usage }}</td>
           <td>
             {{ "%.1f"|format(s.share) }}%
             <div class="bar"><div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div></div>
           </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 style="margin:2rem 0 1rem;font-size:1.1rem">Usage by type</h2>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
+      Each row is a single usage type, so quantity and unit are consistent.
+      Rows under $0.01 are omitted; showing top {{ usage_rows|length }} by cost.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Usage type</th>
+          <th>Unblended</th>
+          <th>Quantity</th>
+          <th>Unit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usage_rows %}
+        <tr>
+          <td>{{ u.service }}</td>
+          <td>{{ u.usage_type }}</td>
+          <td class="cost">${{ "%.2f"|format(u.unblended) }}</td>
+          <td class="cost">{{ u.quantity_fmt }}</td>
+          <td>{{ u.unit }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -342,7 +368,11 @@ def resolve_period(start_str: str, end_str: str) -> tuple[date, date]:
     return start, end
 
 
-def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict]]:
+def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return (daily, services, usage_rows).
+
+    usage_rows are grouped by SERVICE + USAGE_TYPE so quantity has a consistent unit.
+    """
     daily_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
         Granularity="DAILY",
@@ -356,44 +386,83 @@ def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict]]
     service_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
         Granularity="MONTHLY",
-        Metrics=["UnblendedCost", "AmortizedCost", "UsageQuantity"],
+        Metrics=["UnblendedCost", "AmortizedCost"],
         GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
     )
 
-    agg: dict[str, dict] = defaultdict(
-        lambda: {"unblended": 0.0, "amortized": 0.0, "usage_amount": 0.0, "usage_unit": "N/A"}
-    )
+    svc_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
     for r in service_resp["ResultsByTime"]:
         for g in r.get("Groups", []):
             name = g["Keys"][0]
-            unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
-            amortized = float(g["Metrics"]["AmortizedCost"]["Amount"])
-            usage_amount = float(g["Metrics"]["UsageQuantity"]["Amount"])
-            usage_unit = g["Metrics"]["UsageQuantity"]["Unit"]
-            agg[name]["unblended"] += unblended
-            agg[name]["amortized"] += amortized
-            agg[name]["usage_amount"] += usage_amount
-            if usage_unit != "N/A":
-                agg[name]["usage_unit"] = usage_unit
+            svc_agg[name]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
+            svc_agg[name]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
 
     services: list[dict] = []
-    for name, v in agg.items():
+    for name, v in svc_agg.items():
         if v["unblended"] < 0.005 and v["amortized"] < 0.005:
             continue
-        unit = v["usage_unit"]
-        usage_str = (
-            f"{v['usage_amount']:,.2f} {unit}" if unit != "N/A" else f"{v['usage_amount']:,.2f}"
-        )
         services.append(
             {
                 "name": name,
                 "unblended": v["unblended"],
                 "amortized": v["amortized"],
-                "usage": usage_str,
             }
         )
     services.sort(key=lambda x: x["unblended"], reverse=True)
-    return daily, services
+
+    # SERVICE + USAGE_TYPE (max two GroupBy dimensions in Cost Explorer)
+    usage_resp = client.get_cost_and_usage(
+        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+        Granularity="MONTHLY",
+        Metrics=["UnblendedCost", "UsageQuantity"],
+        GroupBy=[
+            {"Type": "DIMENSION", "Key": "SERVICE"},
+            {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
+        ],
+    )
+
+    usage_agg: dict[tuple[str, str], dict] = defaultdict(
+        lambda: {"unblended": 0.0, "quantity": 0.0, "unit": "N/A"}
+    )
+    for r in usage_resp["ResultsByTime"]:
+        for g in r.get("Groups", []):
+            service, usage_type = g["Keys"][0], g["Keys"][1]
+            unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            quantity = float(g["Metrics"]["UsageQuantity"]["Amount"])
+            unit = g["Metrics"]["UsageQuantity"]["Unit"] or "N/A"
+            key = (service, usage_type)
+            usage_agg[key]["unblended"] += unblended
+            usage_agg[key]["quantity"] += quantity
+            if unit != "N/A":
+                usage_agg[key]["unit"] = unit
+
+    usage_rows: list[dict] = []
+    for (service, usage_type), v in usage_agg.items():
+        if v["unblended"] < 0.01:
+            continue
+        qty = v["quantity"]
+        # readable quantity formatting
+        if abs(qty) >= 1_000_000:
+            qty_fmt = f"{qty:,.0f}"
+        elif abs(qty) >= 100:
+            qty_fmt = f"{qty:,.1f}"
+        else:
+            qty_fmt = f"{qty:,.4g}"
+        usage_rows.append(
+            {
+                "service": service,
+                "usage_type": usage_type,
+                "unblended": v["unblended"],
+                "quantity": qty,
+                "quantity_fmt": qty_fmt,
+                "unit": v["unit"],
+            }
+        )
+    usage_rows.sort(key=lambda x: x["unblended"], reverse=True)
+    # Cap table size for readability
+    usage_rows = usage_rows[:100]
+
+    return daily, services, usage_rows
 
 
 def build_report_html(
@@ -401,6 +470,7 @@ def build_report_html(
     end: date,
     daily: list[dict],
     services: list[dict],
+    usage_rows: list[dict],
     run_id: str,
 ) -> tuple[str, float, str]:
     total = sum(s["unblended"] for s in services)
@@ -416,6 +486,7 @@ def build_report_html(
         generated_at=generated_at,
         total_cost=total,
         services=services,
+        usage_rows=usage_rows,
         start=start.isoformat(),
         end=last_day.isoformat(),
         days=(end - start).days,
@@ -532,10 +603,10 @@ def main() -> None:
     print(f"Period: {start} → {last_day}")
 
     ce = boto3.client("ce", region_name="us-east-1")
-    daily, services = fetch_costs(ce, start, end)
+    daily, services, usage_rows = fetch_costs(ce, start, end)
 
     report_html, total_cost, period_label = build_report_html(
-        start, end, daily, services, args.run_id
+        start, end, daily, services, usage_rows, args.run_id
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
