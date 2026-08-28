@@ -160,6 +160,42 @@ REPORT_TEMPLATE = """
       </tbody>
     </table>
 
+    <h2 style="margin:2rem 0 1rem;font-size:1.1rem">By tag: cost-usage</h2>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
+      Costs grouped by the cost allocation tag <code style="color:var(--accent)">cost-usage</code>.
+      Untagged spend appears as <em>(untagged)</em>.
+    </p>
+    {% if tag_rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>Tag value</th>
+          <th>Unblended</th>
+          <th>Amortized</th>
+          <th>Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tag_rows %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td class="cost">${{ "%.2f"|format(t.unblended) }}</td>
+          <td class="cost">${{ "%.2f"|format(t.amortized) }}</td>
+          <td>
+            {{ "%.1f"|format(t.share) }}%
+            <div class="bar"><div class="bar-fill" style="width:{{ [t.share, 100]|min }}%"></div></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);margin-bottom:1.5rem">
+      No data for tag <code>cost-usage</code>. Ensure it is activated as a cost allocation tag
+      in Billing → Cost allocation tags.
+    </p>
+    {% endif %}
+
     <h2 style="margin:2rem 0 1rem;font-size:1.1rem">Usage by type</h2>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
       Each row is a single usage type (consistent unit). Expand a row (▸) to see per-resource
@@ -463,10 +499,13 @@ def resolve_period(start_str: str, end_str: str) -> tuple[date, date]:
     return start, end
 
 
-def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict], list[dict]]:
-    """Return (daily, services, usage_rows).
+def fetch_costs(
+    client, start: date, end: date, tag_key: str = "cost-usage"
+) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Return (daily, services, usage_rows, tag_rows).
 
     usage_rows are grouped by SERVICE + USAGE_TYPE so quantity has a consistent unit.
+    tag_rows are grouped by cost allocation tag `tag_key`.
     """
     daily_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
@@ -567,7 +606,48 @@ def fetch_costs(client, start: date, end: date) -> tuple[list[dict], list[dict],
     usage_rows.sort(key=lambda x: x["unblended"], reverse=True)
     usage_rows = usage_rows[:150]
 
-    return daily, services, usage_rows
+    # --- By cost allocation tag ---
+    tag_rows: list[dict] = []
+    try:
+        tag_resp = client.get_cost_and_usage(
+            TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+            Granularity="MONTHLY",
+            Metrics=["UnblendedCost", "AmortizedCost"],
+            GroupBy=[{"Type": "TAG", "Key": tag_key}],
+        )
+        tag_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
+        for r in tag_resp["ResultsByTime"]:
+            for g in r.get("Groups", []):
+                raw = g["Keys"][0] if g.get("Keys") else ""
+                # CE returns "tag_key$value" or "tag_key$" for empty
+                if "$" in raw:
+                    value = raw.split("$", 1)[1]
+                else:
+                    value = raw
+                if not value:
+                    value = "(untagged)"
+                tag_agg[value]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
+                tag_agg[value]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
+
+        for name, v in tag_agg.items():
+            if v["unblended"] < 0.005 and v["amortized"] < 0.005:
+                continue
+            tag_rows.append(
+                {
+                    "name": name,
+                    "unblended": v["unblended"],
+                    "amortized": v["amortized"],
+                }
+            )
+        tag_rows.sort(key=lambda x: x["unblended"], reverse=True)
+        total_tag = sum(t["unblended"] for t in tag_rows) or 1.0
+        for t in tag_rows:
+            t["share"] = t["unblended"] / total_tag * 100
+        print(f"  tag '{tag_key}': {len(tag_rows)} values")
+    except ClientError as e:
+        print(f"  tag group-by skipped ({tag_key}): {e}")
+
+    return daily, services, usage_rows, tag_rows
 
 def format_qty(qty: float) -> str:
     if abs(qty) >= 1_000_000:
@@ -739,6 +819,7 @@ def build_report_html(
     usage_rows: list[dict],
     run_id: str,
     resources_status: str = "",
+    tag_rows: list[dict] | None = None,
 ) -> tuple[str, float, str]:
     total = sum(s["unblended"] for s in services)
     for s in services:
@@ -754,6 +835,7 @@ def build_report_html(
         total_cost=total,
         services=services,
         usage_rows=usage_rows,
+        tag_rows=tag_rows or [],
         resources_status=resources_status,
         start=start.isoformat(),
         end=last_day.isoformat(),
@@ -871,7 +953,7 @@ def main() -> None:
     print(f"Period: {start} → {last_day}")
 
     ce = boto3.client("ce", region_name="us-east-1")
-    daily, services, usage_rows = fetch_costs(ce, start, end)
+    daily, services, usage_rows, tag_rows = fetch_costs(ce, start, end, tag_key="cost-usage")
 
     # Resource-level detail (opt-in in Cost Explorer; ~14-day rolling window from today)
     top_services = [s["name"] for s in services[:15]]
@@ -882,7 +964,14 @@ def main() -> None:
     attach_resources_to_usage_rows(usage_rows, resources_by_service)
 
     report_html, total_cost, period_label = build_report_html(
-        start, end, daily, services, usage_rows, args.run_id, resources_status
+        start,
+        end,
+        daily,
+        services,
+        usage_rows,
+        args.run_id,
+        resources_status,
+        tag_rows=tag_rows,
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
