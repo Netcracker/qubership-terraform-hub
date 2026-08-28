@@ -1,4 +1,5 @@
 name: AWS Cost Report
+run-name: Generate AWS Cost Report from ${{ github.event.inputs.start_date || 'first day of current month' }} to ${{ github.event.inputs.end_date || 'tomorrow' }}
 
 on:
   # 1st of each month at 06:00 UTC — report for the current month (through today)
