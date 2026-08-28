@@ -4,7 +4,7 @@ AWS Cost Report Generator (private S3)
 - Fetches data from Cost Explorer
 - Generates HTML report with daily chart
 - Uploads to a private S3 bucket with full history
-- Writes presigned URLs to GitHub Actions Job Summary
+- Writes S3 paths to GitHub Actions Job Summary
 """
 
 from __future__ import annotations
@@ -207,16 +207,20 @@ REPORT_TEMPLATE = """
       {{ resources_status }}
     </p>
     {% endif %}
-    <table>
+    <table class="usage-table">
       <thead>
         <tr>
-          <th style="width:2rem"></th>
-          <th>Service</th>
-          <th>Region</th>
-          <th>Usage type</th>
-          <th>Unblended</th>
-          <th>Quantity</th>
-          <th>Unit</th>
+          <td colspan="7" style="padding:0;border-bottom:1px solid var(--border)">
+            <div class="usage-summary usage-header">
+              <span class="chev"></span>
+              <span class="c-service">Service</span>
+              <span class="c-region">Region</span>
+              <span class="c-type">Usage type</span>
+              <span class="c-cost">Unblended</span>
+              <span class="c-qty">Quantity</span>
+              <span class="c-unit">Unit</span>
+            </div>
+          </td>
         </tr>
       </thead>
       <tbody>
@@ -268,15 +272,26 @@ REPORT_TEMPLATE = """
     </table>
     <style>
       details.usage-details { width: 100%; }
-      details.usage-details > summary {
-        list-style: none;
+      .usage-summary {
         display: grid;
         grid-template-columns: 1.5rem minmax(10rem,1.6fr) 7rem minmax(8rem,1.4fr) 6rem 6rem 5rem;
         gap: 0.5rem;
         align-items: center;
         padding: 0.75rem 1rem;
+      }
+      details.usage-details > summary {
+        list-style: none;
         cursor: default;
       }
+      .usage-header {
+        background: #0f172a;
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 0.85rem;
+        padding: 0.75rem 1rem;
+      }
+      .usage-header .c-cost,
+      .usage-header .c-qty { text-align: right; }
       details.usage-details[data-has-resources] > summary { cursor: pointer; }
       details.usage-details > summary::-webkit-details-marker { display: none; }
       details.usage-details[open][data-has-resources] .chev { color: var(--accent); }
@@ -461,12 +476,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--s3-prefix", default="aws-cost-reports")
     p.add_argument("--run-id", default="local")
     p.add_argument("--local-dir", default="", help="Also write files locally (optional)")
-    p.add_argument(
-        "--presign-hours",
-        type=int,
-        default=4,
-        help="Hours for presigned URLs (0 = skip). Default: 4",
-    )
     return p.parse_args()
 
 
@@ -882,25 +891,15 @@ def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str)
     print(f"  uploaded s3://{bucket}/{key}")
 
 
-def make_presigned_url(s3, bucket: str, key: str, hours: int) -> str:
-    expires = max(1, min(hours * 3600, 7 * 24 * 3600))
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": bucket, "Key": key},
-        ExpiresIn=expires,
-    )
-
 
 def write_job_summary(
     period_label: str,
     total_cost: float,
     generated_at: str,
-    report_url: str | None,
-    index_url: str | None,
-    hours: int,
     report_s3: str,
     index_s3: str,
 ) -> None:
+    """Write a short Job Summary without temporary (presigned) links."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     lines = [
         "## AWS Cost Report",
@@ -909,40 +908,22 @@ def write_job_summary(
         f"**Total:** ${total_cost:.2f}  ",
         f"**Generated:** {generated_at}  ",
         "",
+        "### S3 paths",
+        "",
+        f"- Report: `{report_s3}`",
+        f"- Index: `{index_s3}`",
+        "",
     ]
-    if report_url and index_url:
-        lines += [
-            f"### Temporary links (valid ~{hours} h)",
-            "",
-            f"- [Open this report]({report_url})",
-            f"- [All reports history]({index_url})",
-            "",
-            "<details><summary>S3 paths</summary>",
-            "",
-            f"- `{report_s3}`",
-            f"- `{index_s3}`",
-            "",
-            "</details>",
-            "",
-            "> Links are private. Do not share them in public channels for long.",
-        ]
-    else:
-        lines += [
-            "Presigned URLs were not created (`--presign-hours 0`).",
-            "",
-            f"- Report: `{report_s3}`",
-            f"- Index: `{index_s3}`",
-        ]
-
-    text = "\n".join(lines) + "\n"
-    print("\n" + text)
+    body = "\n".join(lines) + "\n"
+    print("\n" + body)
 
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as f:
-            f.write(text)
+            f.write(body)
         print(f"Job Summary updated → {summary_path}")
     else:
         print("(GITHUB_STEP_SUMMARY not set — summary only printed above)")
+
 
 
 def main() -> None:
@@ -1030,18 +1011,10 @@ def main() -> None:
     report_s3 = f"s3://{args.s3_bucket}/{report_key}"
     index_s3 = f"s3://{args.s3_bucket}/{index_key}"
 
-    report_url = index_url = None
-    if args.presign_hours > 0:
-        report_url = make_presigned_url(s3, args.s3_bucket, report_key, args.presign_hours)
-        index_url = make_presigned_url(s3, args.s3_bucket, index_key, args.presign_hours)
-
     write_job_summary(
         period_label=period_label,
         total_cost=total_cost,
         generated_at=generated_at,
-        report_url=report_url,
-        index_url=index_url,
-        hours=args.presign_hours,
         report_s3=report_s3,
         index_s3=index_s3,
     )
