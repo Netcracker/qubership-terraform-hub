@@ -1,11 +1,10 @@
 name: AWS Cost Report
-run-name: Generate AWS Cost Report from ${{ github.event.inputs.start_date || 'first day of current month' }} to ${{ github.event.inputs.end_date || 'tomorrow' }}
 
 on:
-  # 1st of each month at 06:00 UTC — report for the current month (through today)
+  # 1st of each month at 06:00 UTC — full previous calendar month, email always sent
   schedule:
     - cron: '0 6 1 * *'
-  # Manual run with optional date range
+  # Manual run with optional date range and optional email
   workflow_dispatch:
     inputs:
       start_date:
@@ -16,6 +15,16 @@ on:
         description: 'End date (YYYY-MM-DD, inclusive). Empty = today'
         required: false
         type: string
+      trend_months:
+        description: 'Months of spend trend to include (default 3)'
+        required: false
+        type: string
+        default: '3'
+      send_email:
+        description: 'Send the HTML report by email'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,22 +56,45 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Generate report and upload to S3
+        id: report
         env:
           START_DATE: ${{ github.event.inputs.start_date }}
           END_DATE: ${{ github.event.inputs.end_date }}
+          TREND_MONTHS: ${{ github.event.inputs.trend_months || '3' }}
           S3_BUCKET: 'cve-reports-dev'
           S3_PREFIX: 'aws-cost-reports'
           RUN_ID: ${{ github.run_id }}
-          # Presigned URL lifetime in hours (0 = skip). Override via repo variable PRESIGN_HOURS.
-          PRESIGN_HOURS: ${{ vars.PRESIGN_HOURS || '4' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ -z "$S3_BUCKET" ]; then
             echo "::error::Secret S3_BUCKET is not set"
             exit 1
           fi
-          python aws-cost-reports/generate_aws_cost_report.py \
+          EXTRA=()
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            EXTRA+=(--previous-month)
+          fi
+          python scripts/generate_aws_cost_report.py \
             --start-date "${START_DATE:-}" \
             --end-date "${END_DATE:-}" \
+            --trend-months "${TREND_MONTHS:-3}" \
             --s3-bucket "$S3_BUCKET" \
             --s3-prefix "$S3_PREFIX" \
             --run-id "$RUN_ID" \
+            --local-dir ./out \
+            "${EXTRA[@]}"
+
+      - name: Send email
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
+        uses: dawidd6/action-send-mail@94de994a9f6fffee200243214e17002e2920bb59 # v18
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          from: 'AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>'
+          to: 'boris.lavrishchev.qubership@gmail.com' # ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
+          subject: AWS Cost Report — ${{ steps.report.outputs.period_label }}
+          html_body: file://out/email-body.html
+          attachments: out/report.html
