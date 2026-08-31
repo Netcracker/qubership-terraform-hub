@@ -74,7 +74,7 @@ jobs:
           if [ "$EVENT_NAME" = "schedule" ]; then
             EXTRA+=(--previous-month)
           fi
-          python scripts/generate_aws_cost_report.py \
+          python aws-cost-reports/generate_aws_cost_report.py \
             --start-date "${START_DATE:-}" \
             --end-date "${END_DATE:-}" \
             --trend-months "${TREND_MONTHS:-3}" \
