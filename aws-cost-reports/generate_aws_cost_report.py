@@ -98,6 +98,38 @@ REPORT_TEMPLATE = """
       margin-top: 4px;
     }
     .bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+    details.tag-desc {
+      margin-top: 0.35rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    details.tag-desc > summary {
+      cursor: pointer;
+      color: var(--accent);
+      list-style: none;
+      user-select: none;
+    }
+    details.tag-desc > summary::-webkit-details-marker { display: none; }
+    details.tag-desc > summary::before {
+      content: '▸ ';
+      color: var(--accent);
+    }
+    details.tag-desc[open] > summary::before { content: '▾ '; }
+    details.tag-desc .tag-desc-body {
+      margin-top: 0.4rem;
+      padding: 0.55rem 0.75rem;
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      line-height: 1.45;
+    }
+    details.tag-desc .tag-desc-body p { margin: 0 0 0.35rem; }
+    details.tag-desc .tag-desc-body p:last-child { margin-bottom: 0; }
+    details.tag-desc .tag-desc-body ul {
+      margin: 0.25rem 0 0.35rem 1.1rem;
+      padding: 0;
+    }
+    details.tag-desc .tag-desc-body li { margin: 0.15rem 0; }
     footer {
       margin-top: 2.5rem;
       color: var(--muted);
@@ -189,7 +221,35 @@ REPORT_TEMPLATE = """
       <tbody>
         {% for t in tag_rows %}
         <tr>
-          <td>{{ t.name }}</td>
+          <td>
+            <code style="color:var(--text)">{{ t.name }}</code>
+            {% if t.desc %}
+            <details class="tag-desc">
+              <summary>description</summary>
+              <div class="tag-desc-body">
+                <p>{{ t.desc.summary }}</p>
+                {% if t.desc.resources %}
+                <p><strong style="color:var(--text)">Resources:</strong></p>
+                <ul>
+                  {% for item in t.desc.resources %}
+                  <li>{{ item }}</li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+                {% if t.desc.owner %}
+                <p><strong style="color:var(--text)">Owner:</strong> {{ t.desc.owner }}</p>
+                {% endif %}
+                {% if t.desc.notes %}
+                <ul>
+                  {% for note in t.desc.notes %}
+                  <li>{{ note }}</li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+              </div>
+            </details>
+            {% endif %}
+          </td>
           <td class="cost">${{ "%.2f"|format(t.unblended) }}</td>
           <td class="cost">${{ "%.2f"|format(t.amortized) }}</td>
           <td>
@@ -633,6 +693,88 @@ CHART_COLORS = [
     "rgba(148, 163, 184, 0.85)",  # slate (Other)
 ]
 
+# Human-readable descriptions for cost-usage tag values (shown under each row).
+# Keys are matched case-insensitively against the tag value from Cost Explorer.
+TAG_DESCRIPTIONS: dict[str, dict] = {
+    "(untagged)": {
+        "summary": "Resources WITHOUT the cost-usage tag.",
+        "resources": [
+            "Monthly TAX fee (applied on the 1st day of each month, causing a cost spike)",
+            "Any resources without cost-usage tag, e.g. Lambda (qstp-s3-notification until tagged)",
+        ],
+        "owner": None,
+        "notes": None,
+    },
+    "common": {
+        "summary": "Shared infrastructure resources used across multiple projects.",
+        "resources": [
+            "Shared databases",
+            "VPC / networking",
+            "Monitoring tools (Prometheus, Grafana, etc.)",
+        ],
+        "owner": None,
+        "notes": None,
+    },
+    "Istio-SVT": {
+        "summary": "Cloud core Istio integration research.",
+        "resources": [
+            "EKS Kubernetes cluster, worker nodes, load balancers, and related AWS infrastructure",
+        ],
+        "owner": "Aleksandr Iglin",
+        "notes": None,
+    },
+    "api-hub": {
+        "summary": "API-Hub test environment in Qubership AWS.",
+        "resources": [
+            "EKS Kubernetes cluster, worker nodes, load balancers, and related AWS infrastructure",
+        ],
+        "owner": "Aleksandr Agishev",
+        "notes": None,
+    },
+    "cncf_report": {
+        "summary": "CNCF cloud report (exadmin.github.io/opensource_team_monitor).",
+        "resources": [
+            "S3 storage, static site hosting (CloudFront), and supporting AWS services",
+        ],
+        "owner": "Ilya Smirnov",
+        "notes": None,
+    },
+    "github-runner": {
+        "summary": "Obsolete; previously used by OpenSearch autotests.",
+        "resources": [
+            "EC2 instances running ephemeral GitHub Actions runners",
+        ],
+        "owner": "Sergey Ivanov",
+        "notes": None,
+    },
+    "pioneer": {
+        "summary": "Qubership sandbox environment.",
+        "resources": [
+            "EKS Kubernetes cluster (VPC, NAT gateway, node groups, EBS volumes, ELB), and related resources",
+        ],
+        "owner": "Qubership DevOps team",
+        "notes": None,
+    },
+    "qstp": {
+        "summary": "ATP project.",
+        "resources": [
+            "S3 buckets (qstp-results, qstp-consul)",
+            "Lambda (qstp-s3-notification — triggers GitHub Actions on new test results)",
+            "Related infrastructure",
+        ],
+        "owner": "Denis Arychkov",
+        "notes": None,
+    },
+}
+
+
+def lookup_tag_description(tag_name: str) -> dict | None:
+    """Return description dict for a cost-usage tag value, or None if unknown."""
+    if tag_name in TAG_DESCRIPTIONS:
+        return TAG_DESCRIPTIONS[tag_name]
+    lower_map = {k.lower(): v for k, v in TAG_DESCRIPTIONS.items()}
+    return lower_map.get(tag_name.lower())
+
 
 def build_stacked_series(
     labels: list[str],
@@ -858,6 +1000,7 @@ def fetch_costs(
         total_tag = sum(t["unblended"] for t in tag_rows) or 1.0
         for t in tag_rows:
             t["share"] = t["unblended"] / total_tag * 100
+            t["desc"] = lookup_tag_description(t["name"])
         print(f"  tag '{tag_key}': {len(tag_rows)} values")
     except ClientError as e:
         print(f"  tag group-by skipped ({tag_key}): {e}")
