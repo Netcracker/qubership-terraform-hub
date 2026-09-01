@@ -3,22 +3,33 @@
 AWS Cost Report Generator (private S3)
 - Fetches data from Cost Explorer
 - Generates HTML report with daily chart, tag breakdown, and untagged-by-service
+- Generates PDF report (optional, requires reportlab)
+- Exports daily spend by cost-usage tag to costs.csv
 - "Usage by type" is optional (--include-usage)
-- Uploads to a private S3 bucket with full history
+- Uploads HTML, PDF, CSV (+ meta/index) to a private S3 bucket
 - Writes S3 paths to GitHub Actions Job Summary
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import boto3
-from botocore.exceptions import ClientError
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+except ImportError:  # allow local demo without AWS SDK
+    boto3 = None  # type: ignore
+
+    class ClientError(Exception):  # type: ignore
+        pass
+
 from jinja2 import Template
 
 REPORT_TEMPLATE = """
@@ -223,7 +234,7 @@ REPORT_TEMPLATE = """
         <tr>
           <td>
             <code style="color:var(--text)">{{ t.name }}</code>
-            {% if t.desc %}
+            {# {% if t.desc %}
             <details class="tag-desc">
               <summary>description</summary>
               <div class="tag-desc-body">
@@ -248,7 +259,7 @@ REPORT_TEMPLATE = """
                 {% endif %}
               </div>
             </details>
-            {% endif %}
+            {% endif %} #}
           </td>
           <td class="cost">${{ "%.2f"|format(t.unblended) }}</td>
           <td class="cost">${{ "%.2f"|format(t.amortized) }}</td>
@@ -1120,6 +1131,565 @@ def build_report_html(
     return html, total_cost, period_label
 
 
+# Preferred row order in the costs CSV (others appended alphabetically before untagged).
+CSV_TAG_ORDER = [
+    "Istio-SVT",
+    "api-hub",
+    "cncf_report",
+    "common",
+    "github-runner",
+    "pioneer",
+    "qstp",
+]
+
+
+def normalize_tag_csv_name(name: str) -> str:
+    """Map CE tag label to CSV row name (untagged without parentheses)."""
+    if not name or name in ("(untagged)", "untagged"):
+        return "untagged"
+    return name
+
+
+def fetch_daily_costs_by_tag(
+    client, start: date, end: date, tag_key: str = "cost-usage"
+) -> tuple[list[str], dict[str, dict[str, float]]]:
+    """Daily UnblendedCost by cost-usage tag.
+
+    Returns (day_labels ISO, {tag_name: {day: amount}}).
+    Tag names are normalized (untagged without parentheses).
+    """
+    resp = client.get_cost_and_usage(
+        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+        Granularity="DAILY",
+        Metrics=["UnblendedCost"],
+        GroupBy=[{"Type": "TAG", "Key": tag_key}],
+    )
+    day_labels: list[str] = []
+    by_tag: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for r in resp.get("ResultsByTime", []):
+        day = r["TimePeriod"]["Start"]
+        day_labels.append(day)
+        for g in r.get("Groups", []):
+            raw = g["Keys"][0] if g.get("Keys") else ""
+            if "$" in raw:
+                value = raw.split("$", 1)[1]
+            else:
+                value = raw
+            if not value:
+                value = "untagged"
+            value = normalize_tag_csv_name(value)
+            amount = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            by_tag[value][day] += amount
+    # Ensure every day in [start, end) is present even if CE omitted empty days
+    expected: list[str] = []
+    d = start
+    while d < end:
+        expected.append(d.isoformat())
+        d += timedelta(days=1)
+    if not day_labels:
+        day_labels = expected
+    else:
+        # keep CE order but fill missing
+        seen = set(day_labels)
+        for day in expected:
+            if day not in seen:
+                day_labels.append(day)
+        day_labels = sorted(set(day_labels))
+    return day_labels, {k: dict(v) for k, v in by_tag.items()}
+
+
+def build_tag_costs_csv(
+    day_labels: list[str],
+    by_tag: dict[str, dict[str, float]],
+) -> str:
+    """Build CSV matching the costs.csv template (daily columns + Total)."""
+    tags_present = set(by_tag.keys())
+    ordered: list[str] = []
+    for name in CSV_TAG_ORDER:
+        if name in tags_present:
+            ordered.append(name)
+            tags_present.discard(name)
+    # remaining (except untagged) alphabetical
+    rest = sorted(t for t in tags_present if t != "untagged")
+    ordered.extend(rest)
+    if "untagged" in by_tag or "untagged" in tags_present:
+        ordered.append("untagged")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    header = ["Tag value (cost-usage)", *day_labels, "Total costs($)"]
+    writer.writerow(header)
+
+    day_totals = {day: 0.0 for day in day_labels}
+    for tag in ordered:
+        row_amounts = []
+        total = 0.0
+        for day in day_labels:
+            amt = float(by_tag.get(tag, {}).get(day, 0.0))
+            row_amounts.append(f"{amt:.2f}")
+            total += amt
+            day_totals[day] += amt
+        writer.writerow([tag, *row_amounts, f"{total:.2f}"])
+
+    total_row = [f"{day_totals[d]:.2f}" for d in day_labels]
+    grand = sum(day_totals.values())
+    writer.writerow(["TOTAL", *total_row, f"{grand:.2f}"])
+    return buf.getvalue()
+
+
+def build_report_pdf(
+    pdf_path: Path,
+    *,
+    period_label: str,
+    total_cost: float,
+    start: date,
+    end: date,
+    services: list[dict],
+    tag_rows: list[dict],
+    usage_rows: list[dict] | None = None,
+    trend_rows: list[dict] | None = None,
+    trend_months: int = 3,
+    daily: list[dict] | None = None,
+    run_id: str = "local",
+) -> bool:
+    """Write a laconic print-oriented PDF from the same in-memory report data.
+
+    No browser, no extra API calls — tables + compact summary only.
+    """
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+            HRFlowable,
+            KeepTogether,
+        )
+    except ImportError:
+        print(
+            "Warning: reportlab not installed — skipping PDF. "
+            "Install with: pip install reportlab"
+        )
+        return False
+
+    pdf_path = Path(pdf_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    last_day = end - timedelta(days=1)
+    days = (end - start).days
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # Palette — print-friendly, laconic
+    ink = colors.HexColor("#0f172a")
+    muted = colors.HexColor("#64748b")
+    line = colors.HexColor("#e2e8f0")
+    header_bg = colors.HexColor("#f1f5f9")
+    accent = colors.HexColor("#0369a1")
+    row_alt = colors.HexColor("#f8fafc")
+    up = colors.HexColor("#b91c1c")
+    down = colors.HexColor("#047857")
+
+    styles = getSampleStyleSheet()
+    styles.add(
+        ParagraphStyle(
+            name="CoverTitle",
+            parent=styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=18,
+            textColor=ink,
+            spaceAfter=2 * mm,
+            alignment=TA_LEFT,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="CoverSub",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=9,
+            textColor=muted,
+            spaceAfter=4 * mm,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Sec",
+            parent=styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            textColor=ink,
+            spaceBefore=5 * mm,
+            spaceAfter=2 * mm,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="BodyMuted",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=8,
+            textColor=muted,
+            spaceAfter=2 * mm,
+            leading=11,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Cell",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=8,
+            textColor=ink,
+            leading=10,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="CellMuted",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=7.5,
+            textColor=muted,
+            leading=9,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Num",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=8,
+            textColor=ink,
+            alignment=TA_RIGHT,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Footer",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=7.5,
+            textColor=muted,
+            alignment=TA_LEFT,
+        )
+    )
+
+    def money(v: float) -> str:
+        return f"${v:,.2f}"
+
+    def pct(v: float | None) -> Paragraph:
+        if v is None:
+            return Paragraph("—", styles["Num"])
+        if v > 0:
+            return Paragraph(f'<font color="#b91c1c">+{v:.1f}%</font>', styles["Num"])
+        if v < 0:
+            return Paragraph(f'<font color="#047857">{v:.1f}%</font>', styles["Num"])
+        return Paragraph("0.0%", styles["Num"])
+
+    def table_style(ncols: int) -> TableStyle:
+        return TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), header_bg),
+                ("TEXTCOLOR", (0, 0), (-1, 0), muted),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 1), (-1, -1), 8),
+                ("TEXTCOLOR", (0, 1), (-1, -1), ink),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.6, line),
+                ("LINEBELOW", (0, 1), (-1, -2), 0.3, line),
+                ("LINEBELOW", (0, -1), (-1, -1), 0.6, line),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, row_alt]),
+            ]
+        )
+
+    story: list = []
+
+    # --- Header ---
+    story.append(Paragraph("AWS Cost Report", styles["CoverTitle"]))
+    story.append(
+        Paragraph(
+            f"{period_label}  ·  generated {generated_at}  ·  run #{run_id}",
+            styles["CoverSub"],
+        )
+    )
+    story.append(HRFlowable(width="100%", thickness=1, color=line, spaceAfter=3 * mm))
+
+    # --- KPI strip ---
+    avg_daily = (total_cost / days) if days else 0.0
+    kpi_data = [
+        [
+            Paragraph("<b>Total</b>", styles["CellMuted"]),
+            Paragraph("<b>Days</b>", styles["CellMuted"]),
+            Paragraph("<b>Avg / day</b>", styles["CellMuted"]),
+            Paragraph("<b>Untagged svcs</b>", styles["CellMuted"]),
+            Paragraph("<b>Tag values</b>", styles["CellMuted"]),
+        ],
+        [
+            Paragraph(f"<b>{money(total_cost)}</b>", styles["Cell"]),
+            Paragraph(str(days), styles["Cell"]),
+            Paragraph(money(avg_daily), styles["Cell"]),
+            Paragraph(str(len(services)), styles["Cell"]),
+            Paragraph(str(len(tag_rows)), styles["Cell"]),
+        ],
+    ]
+    kpi = Table(kpi_data, colWidths=[35 * mm, 25 * mm, 30 * mm, 35 * mm, 30 * mm])
+    kpi.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), header_bg),
+                ("BOX", (0, 0), (-1, -1), 0.5, line),
+                ("INNERGRID", (0, 0), (-1, -1), 0.3, line),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    story.append(kpi)
+
+    # --- Daily totals (compact, no chart) ---
+    # PDF has no horizontal scroll — use a compact multi-column Date|Cost layout
+    # with full yyyy-mm-dd labels so a full month stays readable on one page.
+    if daily:
+        story.append(Paragraph("Daily totals", styles["Sec"]))
+        n = len(daily)
+        # 3 side-by-side Date|Cost pairs
+        cols = 3
+        col_w = [28 * mm, 22 * mm] * cols
+        # split days into `cols` vertical strips
+        per_col = (n + cols - 1) // cols
+        strips: list[list[dict]] = [
+            daily[i * per_col : (i + 1) * per_col] for i in range(cols)
+        ]
+        max_rows = max(len(s) for s in strips)
+        header = []
+        for _ in range(cols):
+            header.extend(
+                [
+                    Paragraph("Date", styles["CellMuted"]),
+                    Paragraph("Cost", styles["CellMuted"]),
+                ]
+            )
+        rows = [header]
+        for r in range(max_rows):
+            row = []
+            for s in strips:
+                if r < len(s):
+                    row.append(Paragraph(s[r]["date"], styles["Cell"]))
+                    row.append(Paragraph(money(s[r]["cost"]), styles["Num"]))
+                else:
+                    row.append(Paragraph("", styles["Cell"]))
+                    row.append(Paragraph("", styles["Cell"]))
+            rows.append(row)
+        t = Table(rows, colWidths=col_w)
+        t.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), header_bg),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), muted),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("TEXTCOLOR", (0, 1), (-1, -1), ink),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+                    ("ALIGN", (5, 0), (5, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("LINEBELOW", (0, 0), (-1, 0), 0.5, line),
+                    ("LINEBELOW", (0, 1), (-1, -2), 0.25, line),
+                    ("BOX", (0, 0), (-1, -1), 0.5, line),
+                    ("LINEBEFORE", (2, 0), (2, -1), 0.4, line),
+                    ("LINEBEFORE", (4, 0), (4, -1), 0.4, line),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, row_alt]),
+                ]
+            )
+        )
+        story.append(t)
+
+    # --- Trend ---
+    if trend_rows:
+        story.append(
+            Paragraph(f"Monthly trend (last {trend_months} months)", styles["Sec"])
+        )
+        rows = [[
+            Paragraph("Month", styles["CellMuted"]),
+            Paragraph("Unblended", styles["CellMuted"]),
+            Paragraph("Change", styles["CellMuted"]),
+        ]]
+        for t in trend_rows:
+            rows.append(
+                [
+                    Paragraph(t["label"], styles["Cell"]),
+                    Paragraph(money(t["unblended"]), styles["Num"]),
+                    pct(t.get("change")),
+                ]
+            )
+        t = Table(rows, colWidths=[50 * mm, 40 * mm, 30 * mm])
+        t.setStyle(table_style(3))
+        story.append(t)
+
+    # --- By tag ---
+    story.append(Paragraph("By tag: cost-usage", styles["Sec"]))
+    story.append(
+        Paragraph(
+            "Costs grouped by the cost allocation tag cost-usage. "
+            "Untagged spend appears as (untagged).",
+            styles["BodyMuted"],
+        )
+    )
+    if tag_rows:
+        rows = [[
+            Paragraph("Tag value", styles["CellMuted"]),
+            Paragraph("Unblended", styles["CellMuted"]),
+            Paragraph("Amortized", styles["CellMuted"]),
+            Paragraph("Share", styles["CellMuted"]),
+            Paragraph("Description", styles["CellMuted"]),
+        ]]
+        for t in tag_rows:
+            desc = t.get("desc") or {}
+            summary = desc.get("summary") if isinstance(desc, dict) else ""
+            owner = desc.get("owner") if isinstance(desc, dict) else None
+            desc_bits = []
+            if summary:
+                desc_bits.append(summary)
+            if owner:
+                desc_bits.append(f"Owner: {owner}")
+            desc_text = " ".join(desc_bits) if desc_bits else "—"
+            rows.append(
+                [
+                    Paragraph(str(t["name"]), styles["Cell"]),
+                    Paragraph(money(t["unblended"]), styles["Num"]),
+                    Paragraph(money(t["amortized"]), styles["Num"]),
+                    Paragraph(f"{t.get('share', 0):.1f}%", styles["Num"]),
+                    Paragraph(desc_text, styles["CellMuted"]),
+                ]
+            )
+        t = Table(rows, colWidths=[28 * mm, 24 * mm, 24 * mm, 16 * mm, 78 * mm])
+        t.setStyle(table_style(5))
+        story.append(t)
+    else:
+        story.append(
+            Paragraph("No data for tag cost-usage in this period.", styles["BodyMuted"])
+        )
+
+    # --- Untagged services ---
+    story.append(Paragraph("By service (untagged)", styles["Sec"]))
+    story.append(
+        Paragraph(
+            "Breakdown of the (untagged) row — spend on resources without the cost-usage tag.",
+            styles["BodyMuted"],
+        )
+    )
+    if services:
+        rows = [[
+            Paragraph("Service", styles["CellMuted"]),
+            Paragraph("Unblended", styles["CellMuted"]),
+            Paragraph("Amortized", styles["CellMuted"]),
+            Paragraph("Share", styles["CellMuted"]),
+        ]]
+        for s in services:
+            rows.append(
+                [
+                    Paragraph(str(s["name"]), styles["Cell"]),
+                    Paragraph(money(s["unblended"]), styles["Num"]),
+                    Paragraph(money(s["amortized"]), styles["Num"]),
+                    Paragraph(f"{s.get('share', 0):.1f}%", styles["Num"]),
+                ]
+            )
+        t = Table(rows, colWidths=[95 * mm, 28 * mm, 28 * mm, 22 * mm])
+        t.setStyle(table_style(4))
+        story.append(t)
+    else:
+        story.append(
+            Paragraph("No untagged spend in this period.", styles["BodyMuted"])
+        )
+
+    # --- Usage (optional) ---
+    if usage_rows:
+        story.append(Paragraph("Usage by type", styles["Sec"]))
+        story.append(
+            Paragraph(
+                f"Top {len(usage_rows)} usage types by cost (rows under $0.01 omitted).",
+                styles["BodyMuted"],
+            )
+        )
+        rows = [[
+            Paragraph("Service", styles["CellMuted"]),
+            Paragraph("Region", styles["CellMuted"]),
+            Paragraph("Usage type", styles["CellMuted"]),
+            Paragraph("Unblended", styles["CellMuted"]),
+            Paragraph("Qty", styles["CellMuted"]),
+            Paragraph("Unit", styles["CellMuted"]),
+        ]]
+        for u in usage_rows[:40]:
+            rows.append(
+                [
+                    Paragraph(str(u["service"])[:40], styles["Cell"]),
+                    Paragraph(str(u["region"]), styles["Cell"]),
+                    Paragraph(str(u["usage_type"])[:36], styles["Cell"]),
+                    Paragraph(money(u["unblended"]), styles["Num"]),
+                    Paragraph(str(u.get("quantity_fmt", "")), styles["Num"]),
+                    Paragraph(str(u.get("unit", "")), styles["Cell"]),
+                ]
+            )
+        t = Table(rows, colWidths=[42 * mm, 22 * mm, 42 * mm, 22 * mm, 22 * mm, 18 * mm])
+        t.setStyle(table_style(6))
+        story.append(t)
+
+    story.append(Spacer(1, 6 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=line, spaceAfter=2 * mm))
+    story.append(
+        Paragraph(
+            f"Data from AWS Cost Explorer · UnblendedCost / AmortizedCost · "
+            f"{start.isoformat()} → {last_day.isoformat()} · run #{run_id}",
+            styles["Footer"],
+        )
+    )
+
+    try:
+        doc = SimpleDocTemplate(
+            str(pdf_path),
+            pagesize=A4,
+            leftMargin=14 * mm,
+            rightMargin=14 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
+            title=f"AWS Cost Report — {period_label}",
+            author="AWS Cost Report Generator",
+        )
+        doc.build(story)
+        print(f"  PDF written → {pdf_path}")
+        return True
+    except Exception as e:
+        print(f"Warning: PDF generation failed: {e}")
+        return False
+
+
+def html_to_pdf(html: str, pdf_path: Path) -> bool:
+    """Deprecated browser PDF path — kept for compatibility; prefer build_report_pdf."""
+    print(
+        "Warning: html_to_pdf (Chromium) is deprecated; use build_report_pdf instead."
+    )
+    return False
+
+
 def s3_key(prefix: str, *parts: str) -> str:
     return "/".join(p.strip("/") for p in (prefix, *parts) if p)
 
@@ -1159,16 +1729,21 @@ def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str)
 def write_job_summary(
     report_s3: str,
     index_s3: str,
+    pdf_s3: str | None = None,
+    csv_s3: str | None = None,
 ) -> None:
     """Write Job Summary with S3 paths only (no cost figures)."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     lines = [
         "## AWS Cost Report",
         "",
-        f"- Report: `{report_s3}`",
-        f"- Index: `{index_s3}`",
-        "",
+        f"- Report (HTML): `{report_s3}`",
     ]
+    if pdf_s3:
+        lines.append(f"- Report (PDF): `{pdf_s3}`")
+    if csv_s3:
+        lines.append(f"- Costs by tag (CSV): `{csv_s3}`")
+    lines.extend([f"- Index: `{index_s3}`", ""])
     body = "\n".join(lines) + "\n"
     print("\n" + body)
 
@@ -1227,6 +1802,15 @@ def main() -> None:
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+    # Daily costs by tag → CSV (template-compatible)
+    try:
+        csv_days, csv_by_tag = fetch_daily_costs_by_tag(ce, start, end, tag_key="cost-usage")
+        costs_csv = build_tag_costs_csv(csv_days, csv_by_tag)
+        print(f"  costs CSV: {len(csv_by_tag)} tags × {len(csv_days)} days")
+    except ClientError as e:
+        print(f"  costs CSV skipped: {e}")
+        costs_csv = build_tag_costs_csv([], {})
+
     folder_name = f"{start.isoformat()}_{last_day.isoformat()}"
     meta = {
         "period_start": start.isoformat(),
@@ -1238,11 +1822,58 @@ def main() -> None:
         "services_count": len(services),
     }
 
+    local_root = Path(args.local_dir) if args.local_dir else Path("./out")
+    local_root.mkdir(parents=True, exist_ok=True)
+    report_dir = local_root / folder_name
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    # Local artifacts (stable names for email action)
+    (report_dir / "index.html").write_text(report_html, encoding="utf-8")
+    (report_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (local_root / "report.html").write_text(report_html, encoding="utf-8")
+    (local_root / "costs.csv").write_text(costs_csv, encoding="utf-8")
+    (report_dir / "costs.csv").write_text(costs_csv, encoding="utf-8")
+
+    pdf_ok = build_report_pdf(
+        local_root / "report.pdf",
+        period_label=period_label,
+        total_cost=total_cost,
+        start=start,
+        end=end,
+        services=services,
+        tag_rows=tag_rows,
+        usage_rows=usage_rows,
+        trend_rows=trend_rows,
+        trend_months=trend_months,
+        daily=daily,
+        run_id=args.run_id,
+    )
+    if pdf_ok:
+        (report_dir / "report.pdf").write_bytes((local_root / "report.pdf").read_bytes())
+
+    email_body = (
+        "<p>AWS Cost Report is attached.</p>\n"
+        f"<p>Period: {period_label}</p>\n"
+        f"<p>Generated: {generated_at}</p>\n"
+        "<ul>\n"
+        "  <li><strong>report.html</strong> — full interactive report</li>\n"
+        "  <li><strong>report.pdf</strong> — compact printable summary (same data)</li>\n"
+        "  <li><strong>costs.csv</strong> — daily spend by cost-usage tag</li>\n"
+        "</ul>\n"
+    )
+    (local_root / "email-body.html").write_text(email_body, encoding="utf-8")
+    print(f"Local copy written to {report_dir}")
+
     s3 = boto3.client("s3")
     prefix = args.s3_prefix.rstrip("/")
 
     report_key = s3_key(prefix, folder_name, "index.html")
     meta_key = s3_key(prefix, folder_name, "meta.json")
+    csv_key = s3_key(prefix, folder_name, "costs.csv")
+    pdf_key = s3_key(prefix, folder_name, "report.pdf")
+
     print(f"Uploading report → s3://{args.s3_bucket}/{report_key}")
     upload_file(s3, args.s3_bucket, report_key, report_html, "text/html; charset=utf-8")
     upload_file(
@@ -1252,6 +1883,17 @@ def main() -> None:
         json.dumps(meta, ensure_ascii=False, indent=2),
         "application/json",
     )
+    upload_file(s3, args.s3_bucket, csv_key, costs_csv, "text/csv; charset=utf-8")
+    pdf_s3 = None
+    if pdf_ok:
+        upload_file(
+            s3,
+            args.s3_bucket,
+            pdf_key,
+            (local_root / "report.pdf").read_bytes(),
+            "application/pdf",
+        )
+        pdf_s3 = f"s3://{args.s3_bucket}/{pdf_key}"
 
     reports = list_existing_reports(s3, args.s3_bucket, prefix)
     if not any(
@@ -1269,30 +1911,15 @@ def main() -> None:
     print(f"Uploading history index → s3://{args.s3_bucket}/{index_key}")
     upload_file(s3, args.s3_bucket, index_key, index_html, "text/html; charset=utf-8")
 
-    local_root = Path(args.local_dir) if args.local_dir else Path("./out")
-    local_root.mkdir(parents=True, exist_ok=True)
-    report_dir = local_root / folder_name
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "index.html").write_text(report_html, encoding="utf-8")
-    (report_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    # Stable paths for the email action
-    (local_root / "report.html").write_text(report_html, encoding="utf-8")
-    email_body = (
-        "<p>AWS Cost Report is attached as HTML.</p>\n"
-        f"<p>Period: {period_label}</p>\n"
-        f"<p>Generated: {generated_at}</p>\n"
-    )
-    (local_root / "email-body.html").write_text(email_body, encoding="utf-8")
-    print(f"Local copy written to {report_dir}")
-
     report_s3 = f"s3://{args.s3_bucket}/{report_key}"
     index_s3 = f"s3://{args.s3_bucket}/{index_key}"
+    csv_s3 = f"s3://{args.s3_bucket}/{csv_key}"
 
     write_job_summary(
         report_s3=report_s3,
         index_s3=index_s3,
+        pdf_s3=pdf_s3,
+        csv_s3=csv_s3,
     )
 
     gh_out = os.environ.get("GITHUB_OUTPUT")

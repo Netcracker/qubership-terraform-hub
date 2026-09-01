@@ -49,7 +49,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install boto3 jinja2
+        run: pip install boto3 jinja2 reportlab
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -93,6 +93,20 @@ jobs:
             --local-dir ./out \
             "${EXTRA[@]}"
 
+      - name: Prepare email attachments
+        id: attach
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
+        run: |
+          files=(out/report.html out/costs.csv)
+          if [ -f out/report.pdf ]; then
+            files+=(out/report.pdf)
+          else
+            echo "::warning::report.pdf missing — email will go without PDF"
+          fi
+          # comma-separated list for the email action
+          IFS=,
+          echo "list=${files[*]}" >> "$GITHUB_OUTPUT"
+
       - name: Send email
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
         uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e  # v2.6.0
@@ -105,4 +119,5 @@ jobs:
           to: 'boris.lavrishchev.qubership@gmail.com,pavel.anikin.qubership@gmail.com' # ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
           subject: AWS Cost Report — ${{ steps.report.outputs.period_label }}
           html-body: file://out/email-body.html
-          attachments: out/report.html
+          # HTML + CSV + PDF (if generated)
+          attachments: ${{ steps.attach.outputs.list }}
