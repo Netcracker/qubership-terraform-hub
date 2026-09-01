@@ -86,14 +86,14 @@ jobs:
 
       - name: Send email
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
-        uses: dawidd6/action-send-mail@94de994a9f6fffee200243214e17002e2920bb59 # v18
+        uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e  # v2.6.0
         with:
-          server_address: smtp.gmail.com
-          server_port: 587
+          server-address: smtp.gmail.com
+          server-port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
           from: 'AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>'
           to: 'boris.lavrishchev.qubership@gmail.com' # ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
           subject: AWS Cost Report — ${{ steps.report.outputs.period_label }}
-          html_body: file://out/email-body.html
+          html-body: file://out/email-body.html
           attachments: out/report.html
