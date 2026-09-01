@@ -2,7 +2,8 @@
 """
 AWS Cost Report Generator (private S3)
 - Fetches data from Cost Explorer
-- Generates HTML report with daily chart
+- Generates HTML report with daily chart, tag breakdown, and untagged-by-service
+- "Usage by type" is optional (--include-usage)
 - Uploads to a private S3 bucket with full history
 - Writes S3 paths to GitHub Actions Job Summary
 """
@@ -117,7 +118,7 @@ REPORT_TEMPLATE = """
         <div class="value">${{ "%.2f"|format(total_cost) }}</div>
       </div>
       <div class="card">
-        <div class="label">Services</div>
+        <div class="label">Untagged services</div>
         <div class="value">{{ services|length }}</div>
       </div>
       <div class="card">
@@ -170,31 +171,6 @@ REPORT_TEMPLATE = """
     </table>
     {% endif %}
 
-    <h2 style="margin-bottom:1rem;font-size:1.1rem">By service</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Service</th>
-          <th>Unblended</th>
-          <th>Amortized</th>
-          <th>Share</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in services %}
-        <tr>
-          <td>{{ s.name }}</td>
-          <td class="cost">${{ "%.2f"|format(s.unblended) }}</td>
-          <td class="cost">${{ "%.2f"|format(s.amortized) }}</td>
-          <td>
-            {{ "%.1f"|format(s.share) }}%
-            <div class="bar"><div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div></div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
     <h2 style="margin:2rem 0 1rem;font-size:1.1rem">By tag: cost-usage</h2>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
       Costs grouped by the cost allocation tag <code style="color:var(--accent)">cost-usage</code>.
@@ -231,6 +207,42 @@ REPORT_TEMPLATE = """
     </p>
     {% endif %}
 
+    <h2 style="margin:2rem 0 1rem;font-size:1.1rem">By service (untagged)</h2>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
+      Breakdown of the <em>(untagged)</em> row above — spend on resources without the
+      <code style="color:var(--accent)">cost-usage</code> tag.
+    </p>
+    {% if services %}
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Unblended</th>
+          <th>Amortized</th>
+          <th>Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in services %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td class="cost">${{ "%.2f"|format(s.unblended) }}</td>
+          <td class="cost">${{ "%.2f"|format(s.amortized) }}</td>
+          <td>
+            {{ "%.1f"|format(s.share) }}%
+            <div class="bar"><div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);margin-bottom:1.5rem">
+      No untagged spend in this period (or the tag is not activated).
+    </p>
+    {% endif %}
+
+    {% if usage_rows %}
     <h2 style="margin:2rem 0 1rem;font-size:1.1rem">Usage by type</h2>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">
       Each row is a single usage type (consistent unit). Rows under $0.01 omitted;
@@ -260,6 +272,7 @@ REPORT_TEMPLATE = """
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
 
     <footer>
       Data from AWS Cost Explorer · UnblendedCost / AmortizedCost ·
@@ -543,6 +556,11 @@ def parse_args() -> argparse.Namespace:
         default=3,
         help="Number of months in the spend trend chart (default: 3)",
     )
+    p.add_argument(
+        "--include-usage",
+        action="store_true",
+        help="Include the optional 'Usage by type' table (extra Cost Explorer API calls)",
+    )
     p.add_argument("--s3-bucket", required=True)
     p.add_argument("--s3-prefix", default="aws-cost-reports")
     p.add_argument("--run-id", default="local")
@@ -649,15 +667,22 @@ def build_stacked_series(
 
 
 def fetch_costs(
-    client, start: date, end: date, tag_key: str = "cost-usage"
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[str], list[dict]]:
-    """Return (daily, services, usage_rows, tag_rows, daily_labels, chart_series).
+    client,
+    start: date,
+    end: date,
+    tag_key: str = "cost-usage",
+    include_usage: bool = False,
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[str], list[dict], float]:
+    """Return (daily, untagged_services, usage_rows, tag_rows, daily_labels, chart_series, total_cost).
 
-    usage_rows are grouped by SERVICE + USAGE_TYPE so quantity has a consistent unit.
+    untagged_services: costs by SERVICE filtered to resources without `tag_key`
+      (breakdown of the (untagged) row in the tag table).
+    usage_rows are optional (only if include_usage); grouped by SERVICE + USAGE_TYPE.
     tag_rows are grouped by cost allocation tag `tag_key`.
     chart_series is stacked daily spend by top services for Chart.js.
+    total_cost is overall unblended spend for the period (from daily data).
     """
-    # Daily costs broken down by service (for stacked chart)
+    # Daily costs broken down by service (for stacked chart + overall total)
     daily_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
         Granularity="DAILY",
@@ -683,98 +708,118 @@ def fetch_costs(
     # Top services for the chart; rest → "Other"
     chart_series = build_stacked_series(daily_labels, daily_by_svc, svc_totals, top_n=8)
 
-    # Keep a simple daily total list for compatibility (optional)
     daily: list[dict] = [
         {"date": d, "cost": round(sum(daily_by_svc.get(d, {}).values()), 2)}
         for d in daily_labels
     ]
+    total_cost = round(sum(d["cost"] for d in daily), 2)
 
-    service_resp = client.get_cost_and_usage(
-        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
-        Granularity="MONTHLY",
-        Metrics=["UnblendedCost", "AmortizedCost"],
-        GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
-    )
-
-    svc_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
-    for r in service_resp["ResultsByTime"]:
-        for g in r.get("Groups", []):
-            name = g["Keys"][0]
-            svc_agg[name]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
-            svc_agg[name]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
-
+    # --- Untagged services only (ABSENT cost-usage tag) ---
+    # Breakdown of the (untagged) row from the tag table.
     services: list[dict] = []
-    for name, v in svc_agg.items():
-        if v["unblended"] < 0.005 and v["amortized"] < 0.005:
-            continue
-        services.append(
-            {
-                "name": name,
-                "unblended": v["unblended"],
-                "amortized": v["amortized"],
-            }
-        )
-    services.sort(key=lambda x: x["unblended"], reverse=True)
-
-    # Cost Explorer allows at most 2 GroupBy dimensions. To get
-    # Service + Region + Usage type we filter by service and group by REGION + USAGE_TYPE.
-    usage_agg: dict[tuple[str, str, str], dict] = defaultdict(
-        lambda: {"unblended": 0.0, "quantity": 0.0, "unit": "N/A"}
-    )
-    # Limit API calls to the most expensive services
-    for service in [s["name"] for s in services[:25]]:
-        usage_resp = client.get_cost_and_usage(
+    try:
+        untagged_resp = client.get_cost_and_usage(
             TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
             Granularity="MONTHLY",
-            Metrics=["UnblendedCost", "UsageQuantity"],
+            Metrics=["UnblendedCost", "AmortizedCost"],
             Filter={
-                "Dimensions": {
-                    "Key": "SERVICE",
-                    "Values": [service],
+                "Tags": {
+                    "Key": tag_key,
+                    "MatchOptions": ["ABSENT"],
                 }
             },
-            GroupBy=[
-                {"Type": "DIMENSION", "Key": "REGION"},
-                {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
-            ],
+            GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
         )
-        for r in usage_resp["ResultsByTime"]:
+        svc_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
+        for r in untagged_resp["ResultsByTime"]:
             for g in r.get("Groups", []):
-                region_raw, usage_type = g["Keys"][0], g["Keys"][1]
-                region = region_raw if region_raw and region_raw not in ("NoRegion", "NoRegion$", "") else "global"
-                unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
-                quantity = float(g["Metrics"]["UsageQuantity"]["Amount"])
-                unit = g["Metrics"]["UsageQuantity"]["Unit"] or "N/A"
-                key = (service, region, usage_type)
-                usage_agg[key]["unblended"] += unblended
-                usage_agg[key]["quantity"] += quantity
-                if unit != "N/A":
-                    usage_agg[key]["unit"] = unit
+                name = g["Keys"][0]
+                svc_agg[name]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
+                svc_agg[name]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
 
+        for name, v in svc_agg.items():
+            if v["unblended"] < 0.005 and v["amortized"] < 0.005:
+                continue
+            services.append(
+                {
+                    "name": name,
+                    "unblended": v["unblended"],
+                    "amortized": v["amortized"],
+                }
+            )
+        services.sort(key=lambda x: x["unblended"], reverse=True)
+        print(f"  untagged services: {len(services)}")
+    except ClientError as e:
+        print(f"  untagged services query skipped: {e}")
+
+    # --- Optional: Usage by type (expensive — many API calls) ---
     usage_rows: list[dict] = []
-    for (service, region, usage_type), v in usage_agg.items():
-        if v["unblended"] < 0.01:
-            continue
-        qty = v["quantity"]
-        if abs(qty) >= 1_000_000:
-            qty_fmt = f"{qty:,.0f}"
-        elif abs(qty) >= 100:
-            qty_fmt = f"{qty:,.1f}"
-        else:
-            qty_fmt = f"{qty:,.4g}"
-        usage_rows.append(
-            {
-                "service": service,
-                "region": region,
-                "usage_type": usage_type,
-                "unblended": v["unblended"],
-                "quantity": qty,
-                "quantity_fmt": qty_fmt,
-                "unit": v["unit"],
-            }
+    if include_usage:
+        # Prefer top untagged services; fall back to overall top from daily totals
+        top_for_usage = [s["name"] for s in services[:25]]
+        if not top_for_usage:
+            top_for_usage = [n for n, _ in sorted(svc_totals.items(), key=lambda x: -x[1])[:25]]
+
+        usage_agg: dict[tuple[str, str, str], dict] = defaultdict(
+            lambda: {"unblended": 0.0, "quantity": 0.0, "unit": "N/A"}
         )
-    usage_rows.sort(key=lambda x: x["unblended"], reverse=True)
-    usage_rows = usage_rows[:150]
+        for service in top_for_usage:
+            usage_resp = client.get_cost_and_usage(
+                TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+                Granularity="MONTHLY",
+                Metrics=["UnblendedCost", "UsageQuantity"],
+                Filter={
+                    "Dimensions": {
+                        "Key": "SERVICE",
+                        "Values": [service],
+                    }
+                },
+                GroupBy=[
+                    {"Type": "DIMENSION", "Key": "REGION"},
+                    {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
+                ],
+            )
+            for r in usage_resp["ResultsByTime"]:
+                for g in r.get("Groups", []):
+                    region_raw, usage_type = g["Keys"][0], g["Keys"][1]
+                    region = (
+                        region_raw
+                        if region_raw and region_raw not in ("NoRegion", "NoRegion$", "")
+                        else "global"
+                    )
+                    unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
+                    quantity = float(g["Metrics"]["UsageQuantity"]["Amount"])
+                    unit = g["Metrics"]["UsageQuantity"]["Unit"] or "N/A"
+                    key = (service, region, usage_type)
+                    usage_agg[key]["unblended"] += unblended
+                    usage_agg[key]["quantity"] += quantity
+                    if unit != "N/A":
+                        usage_agg[key]["unit"] = unit
+
+        for (service, region, usage_type), v in usage_agg.items():
+            if v["unblended"] < 0.01:
+                continue
+            qty = v["quantity"]
+            if abs(qty) >= 1_000_000:
+                qty_fmt = f"{qty:,.0f}"
+            elif abs(qty) >= 100:
+                qty_fmt = f"{qty:,.1f}"
+            else:
+                qty_fmt = f"{qty:,.4g}"
+            usage_rows.append(
+                {
+                    "service": service,
+                    "region": region,
+                    "usage_type": usage_type,
+                    "unblended": v["unblended"],
+                    "quantity": qty,
+                    "quantity_fmt": qty_fmt,
+                    "unit": v["unit"],
+                }
+            )
+        usage_rows.sort(key=lambda x: x["unblended"], reverse=True)
+        usage_rows = usage_rows[:150]
+        print(f"  usage rows: {len(usage_rows)}")
 
     # --- By cost allocation tag ---
     tag_rows: list[dict] = []
@@ -817,7 +862,7 @@ def fetch_costs(
     except ClientError as e:
         print(f"  tag group-by skipped ({tag_key}): {e}")
 
-    return daily, services, usage_rows, tag_rows, daily_labels, chart_series
+    return daily, services, usage_rows, tag_rows, daily_labels, chart_series, total_cost
 
 
 def fetch_monthly_trend(
@@ -888,6 +933,7 @@ def build_report_html(
     services: list[dict],
     usage_rows: list[dict],
     run_id: str,
+    total_cost: float | None = None,
     tag_rows: list[dict] | None = None,
     daily_labels: list[str] | None = None,
     chart_series: list[dict] | None = None,
@@ -896,9 +942,12 @@ def build_report_html(
     trend_series: list[dict] | None = None,
     trend_rows: list[dict] | None = None,
 ) -> tuple[str, float, str]:
-    total = sum(s["unblended"] for s in services)
+    # total_cost is overall period spend; services are untagged-only for the breakdown table
+    if total_cost is None:
+        total_cost = sum(s["unblended"] for s in services)
+    untagged_total = sum(s["unblended"] for s in services)
     for s in services:
-        s["share"] = (s["unblended"] / total * 100) if total > 0 else 0.0
+        s["share"] = (s["unblended"] / untagged_total * 100) if untagged_total > 0 else 0.0
 
     last_day = end - timedelta(days=1)
     period_label = f"{start.strftime('%d %b %Y')} — {last_day.strftime('%d %b %Y')}"
@@ -910,7 +959,7 @@ def build_report_html(
     html = Template(REPORT_TEMPLATE).render(
         period_label=period_label,
         generated_at=generated_at,
-        total_cost=total,
+        total_cost=total_cost,
         services=services,
         usage_rows=usage_rows,
         tag_rows=tag_rows or [],
@@ -925,7 +974,7 @@ def build_report_html(
         trend_rows=trend_rows or [],
         run_id=run_id,
     )
-    return html, total, period_label
+    return html, total_cost, period_label
 
 
 def s3_key(prefix: str, *parts: str) -> str:
@@ -1000,8 +1049,20 @@ def main() -> None:
     print(f"Period: {start} → {last_day}")
 
     ce = boto3.client("ce", region_name="us-east-1")
-    daily, services, usage_rows, tag_rows, daily_labels, chart_series = fetch_costs(
-        ce, start, end, tag_key="cost-usage"
+    (
+        daily,
+        services,
+        usage_rows,
+        tag_rows,
+        daily_labels,
+        chart_series,
+        total_cost,
+    ) = fetch_costs(
+        ce,
+        start,
+        end,
+        tag_key="cost-usage",
+        include_usage=args.include_usage,
     )
     trend_labels, trend_series, trend_rows = fetch_monthly_trend(ce, end, trend_months)
 
@@ -1012,6 +1073,7 @@ def main() -> None:
         services,
         usage_rows,
         args.run_id,
+        total_cost=total_cost,
         tag_rows=tag_rows,
         daily_labels=daily_labels,
         chart_series=chart_series,

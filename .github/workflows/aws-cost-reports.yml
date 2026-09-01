@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: '3'
+      include_usage:
+        description: 'Include the optional Usage by type table (extra API calls)'
+        required: false
+        type: boolean
+        default: false
       send_email:
         description: 'Send the HTML report by email'
         required: false
@@ -61,6 +66,7 @@ jobs:
           START_DATE: ${{ github.event.inputs.start_date }}
           END_DATE: ${{ github.event.inputs.end_date }}
           TREND_MONTHS: ${{ github.event.inputs.trend_months || '3' }}
+          INCLUDE_USAGE: ${{ github.event.inputs.include_usage }}
           S3_BUCKET: 'cve-reports-dev'
           S3_PREFIX: 'aws-cost-reports'
           RUN_ID: ${{ github.run_id }}
@@ -73,6 +79,9 @@ jobs:
           EXTRA=()
           if [ "$EVENT_NAME" = "schedule" ]; then
             EXTRA+=(--previous-month)
+          fi
+          if [ "$INCLUDE_USAGE" = "true" ]; then
+            EXTRA+=(--include-usage)
           fi
           python aws-cost-reports/generate_aws_cost_report.py \
             --start-date "${START_DATE:-}" \
