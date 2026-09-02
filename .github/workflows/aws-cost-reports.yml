@@ -1,9 +1,10 @@
 name: AWS Cost Report
 
 on:
-  # 1st of each month at 06:00 UTC — full previous calendar month, email always sent
+  # 2nd of each month at 06:00 UTC — full previous calendar month, email always sent
+  # (2nd so the AWS invoice for the previous month is more likely already issued)
   schedule:
-    - cron: '0 6 1 * *'
+    - cron: '0 6 2 * *'
   # Manual run with optional date range and optional email
   workflow_dispatch:
     inputs:
@@ -22,6 +23,11 @@ on:
         default: '3'
       include_usage:
         description: 'Include the optional Usage by type table (extra API calls)'
+        required: false
+        type: boolean
+        default: false
+      include_invoice:
+        description: 'Download AWS invoice PDF for the report month and attach to email'
         required: false
         type: boolean
         default: false
@@ -67,6 +73,7 @@ jobs:
           END_DATE: ${{ github.event.inputs.end_date }}
           TREND_MONTHS: ${{ github.event.inputs.trend_months || '3' }}
           INCLUDE_USAGE: ${{ github.event.inputs.include_usage }}
+          INCLUDE_INVOICE: ${{ github.event.inputs.include_invoice }}
           S3_BUCKET: 'cve-reports-dev'
           S3_PREFIX: 'aws-cost-reports'
           RUN_ID: ${{ github.run_id }}
@@ -79,9 +86,14 @@ jobs:
           EXTRA=()
           if [ "$EVENT_NAME" = "schedule" ]; then
             EXTRA+=(--previous-month)
+            # Monthly run: try to attach AWS invoice PDF (warning only if missing)
+            EXTRA+=(--fetch-invoice)
           fi
           if [ "$INCLUDE_USAGE" = "true" ]; then
             EXTRA+=(--include-usage)
+          fi
+          if [ "$INCLUDE_INVOICE" = "true" ]; then
+            EXTRA+=(--fetch-invoice)
           fi
           python aws-cost-reports/generate_aws_cost_report.py \
             --start-date "${START_DATE:-}" \
@@ -101,11 +113,24 @@ jobs:
           if [ -f out/report.pdf ]; then
             files+=(out/report.pdf)
           else
-            echo "::warning::report.pdf missing — email will go without PDF"
+            echo "::warning::report.pdf missing — email will go without report PDF"
           fi
-          # comma-separated list for the email action
+          # AWS invoice PDFs (email only; not uploaded to S3)
+          if [ -d out/invoices ]; then
+            while IFS= read -r -d '' f; do
+              files+=("$f")
+            done < <(find out/invoices -type f -name '*.pdf' -print0 2>/dev/null)
+          fi
+          if [ -f out/invoice.pdf ]; then
+            # already covered via invoices/ usually; include primary alias if present alone
+            case " ${files[*]} " in
+              *" out/invoice.pdf "*) ;;
+              *) files+=(out/invoice.pdf) ;;
+            esac
+          fi
           IFS=,
           echo "list=${files[*]}" >> "$GITHUB_OUTPUT"
+          echo "Attachments: ${files[*]}"
 
       - name: Send email
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}

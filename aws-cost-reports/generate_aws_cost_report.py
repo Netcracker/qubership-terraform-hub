@@ -632,6 +632,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include the optional 'Usage by type' table (extra Cost Explorer API calls)",
     )
+    p.add_argument(
+        "--fetch-invoice",
+        action="store_true",
+        help="Download AWS invoice PDF(s) for the report billing period (email only, not S3)",
+    )
+    p.add_argument(
+        "--invoice-required",
+        action="store_true",
+        help="Fail the run if --fetch-invoice finds no invoice PDF (use on scheduled runs)",
+    )
     p.add_argument("--s3-bucket", required=True)
     p.add_argument("--s3-prefix", default="aws-cost-reports")
     p.add_argument("--run-id", default="local")
@@ -1922,6 +1932,116 @@ def write_job_summary(
 
 
 
+def download_invoices_for_billing_period(
+    out_dir: Path,
+    *,
+    year: int,
+    month: int,
+    account_id: str | None = None,
+) -> list[Path]:
+    """Download invoice PDF(s) for a billing period via AWS Invoicing API.
+
+    Uses ListInvoiceSummaries + GetInvoicePDF. Files are written under out_dir;
+    nothing is uploaded to S3. Returns paths of successfully downloaded PDFs.
+    """
+    if boto3 is None:
+        raise RuntimeError("boto3 is required to download invoices")
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Invoicing API is us-east-1 only
+    inv = boto3.client("invoicing", region_name="us-east-1")
+    if not account_id:
+        account_id = boto3.client("sts", region_name="us-east-1").get_caller_identity()[
+            "Account"
+        ]
+
+    print(f"Fetching invoices for {year:04d}-{month:02d} (account {account_id})…")
+    summaries: list[dict] = []
+    next_token: str | None = None
+    while True:
+        kwargs: dict = {
+            "Selector": {"ResourceType": "ACCOUNT_ID", "Value": account_id},
+            "Filter": {"BillingPeriod": {"Year": year, "Month": month}},
+            "MaxResults": 100,
+        }
+        if next_token:
+            kwargs["NextToken"] = next_token
+        resp = inv.list_invoice_summaries(**kwargs)
+        summaries.extend(resp.get("InvoiceSummaries") or [])
+        next_token = resp.get("NextToken")
+        if not next_token:
+            break
+
+    if not summaries:
+        print(f"  no invoices found for {year:04d}-{month:02d}")
+        return []
+
+    # Prefer commercial INVOICE documents; still download others if that's all we get
+    preferred = [
+        s
+        for s in summaries
+        if (s.get("InvoiceType") or "").upper() in ("INVOICE", "")
+        or s.get("InvoiceType") is None
+    ]
+    to_download = preferred or summaries
+
+    paths: list[Path] = []
+    for s in to_download:
+        invoice_id = s.get("InvoiceId") or s.get("CommercialInvoiceId")
+        if not invoice_id:
+            print(f"  skip summary without InvoiceId: {s}")
+            continue
+        inv_type = s.get("InvoiceType") or "INVOICE"
+        amount = (
+            (s.get("BaseCurrencyAmount") or {}).get("TotalAmount")
+            or (s.get("TaxCurrencyAmount") or {}).get("TotalAmount")
+            or "?"
+        )
+        print(f"  invoice {invoice_id} type={inv_type} amount={amount}")
+        try:
+            pdf_resp = inv.get_invoice_pdf(InvoiceId=invoice_id)
+        except ClientError as e:
+            print(f"  get_invoice_pdf failed for {invoice_id}: {e}")
+            continue
+        pdf_info = pdf_resp.get("InvoicePDF") or {}
+        url = pdf_info.get("DocumentUrl")
+        if not url:
+            print(f"  no DocumentUrl for {invoice_id}")
+            continue
+        # Download via urllib (stdlib) — pre-signed S3 URL
+        import urllib.request
+
+        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in invoice_id)
+        dest = out_dir / f"invoice_{year:04d}-{month:02d}_{safe_id}.pdf"
+        try:
+            with urllib.request.urlopen(url, timeout=120) as resp:
+                dest.write_bytes(resp.read())
+            print(f"  saved {dest} ({dest.stat().st_size} bytes)")
+            paths.append(dest)
+        except Exception as e:
+            print(f"  download failed for {invoice_id}: {e}")
+
+        # Supplemental documents (tax e-invoice, etc.)
+        for sup in pdf_info.get("SupplementalDocuments") or []:
+            sup_url = sup.get("DocumentUrl")
+            sup_id = sup.get("DocumentId") or "supplement"
+            if not sup_url:
+                continue
+            safe_sup = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(sup_id))
+            sup_dest = out_dir / f"invoice_{year:04d}-{month:02d}_{safe_id}_{safe_sup}.pdf"
+            try:
+                with urllib.request.urlopen(sup_url, timeout=120) as resp:
+                    sup_dest.write_bytes(resp.read())
+                print(f"  saved supplement {sup_dest}")
+                paths.append(sup_dest)
+            except Exception as e:
+                print(f"  supplement download failed: {e}")
+
+    return paths
+
+
 def main() -> None:
     args = parse_args()
     start, end = resolve_period(
@@ -2028,15 +2148,48 @@ def main() -> None:
     if pdf_ok:
         (report_dir / "report.pdf").write_bytes((local_root / "report.pdf").read_bytes())
 
+    invoice_paths: list[Path] = []
+    if args.fetch_invoice:
+        # Billing period = calendar month of the report's last day
+        try:
+            invoice_paths = download_invoices_for_billing_period(
+                local_root / "invoices",
+                year=last_day.year,
+                month=last_day.month,
+            )
+        except Exception as e:
+            print(f"Invoice download error: {e}")
+            invoice_paths = []
+        if not invoice_paths and args.invoice_required:
+            raise SystemExit(
+                f"No invoice PDF found for {last_day.year:04d}-{last_day.month:02d} "
+                "(--invoice-required). Check IAM invoicing:* permissions and that "
+                "the invoice has been issued."
+            )
+        # Stable path for the first invoice (email action convenience)
+        if invoice_paths:
+            primary = local_root / "invoice.pdf"
+            primary.write_bytes(invoice_paths[0].read_bytes())
+
+    email_attachments_note = [
+        "  <li><strong>report.html</strong> — full interactive report</li>",
+        "  <li><strong>report.pdf</strong> — compact printable summary (same data)</li>",
+        "  <li><strong>costs.xlsx</strong> — daily spend by cost-usage tag</li>",
+    ]
+    if invoice_paths:
+        email_attachments_note.append(
+            f"  <li><strong>invoice PDF</strong> — AWS invoice for "
+            f"{last_day.year:04d}-{last_day.month:02d} "
+            f"({len(invoice_paths)} file(s))</li>"
+        )
+
     email_body = (
         "<p>AWS Cost Report is attached.</p>\n"
         f"<p>Period: {period_label}</p>\n"
         f"<p>Generated: {generated_at}</p>\n"
         "<ul>\n"
-        "  <li><strong>report.html</strong> — full interactive report</li>\n"
-        "  <li><strong>report.pdf</strong> — compact printable summary (same data)</li>\n"
-        "  <li><strong>costs.xlsx</strong> — daily spend by cost-usage tag</li>\n"
-        "</ul>\n"
+        + "\n".join(email_attachments_note)
+        + "\n</ul>\n"
     )
     (local_root / "email-body.html").write_text(email_body, encoding="utf-8")
     print(f"Local copy written to {report_dir}")
