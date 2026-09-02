@@ -833,9 +833,25 @@ def fetch_costs(
     usage_rows are optional (only if include_usage); grouped by SERVICE + USAGE_TYPE.
     tag_rows are grouped by cost allocation tag `tag_key`.
     chart_series is stacked daily spend by top services for Chart.js.
-    total_cost is overall unblended spend for the period (from daily data).
+    total_cost is CE Total.UnblendedCost for the report period (MONTHLY aggregation,
+    same basis as the trend table — used for invoicing header figure).
     """
-    # Daily costs broken down by service (for stacked chart + overall total)
+    # Authoritative period total — same source as monthly trend rows (CE Total).
+    # Do NOT derive this from summed daily rows: management invoices off the header.
+    total_resp = client.get_cost_and_usage(
+        TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+        Granularity="MONTHLY",
+        Metrics=["UnblendedCost"],
+    )
+    total_cost = 0.0
+    for r in total_resp.get("ResultsByTime", []):
+        total_metrics = r.get("Total") or {}
+        if "UnblendedCost" in total_metrics:
+            total_cost += float(total_metrics["UnblendedCost"]["Amount"])
+    total_cost = round(total_cost, 2)
+    print(f"  period Total.UnblendedCost: ${total_cost:.2f}")
+
+    # Daily costs broken down by service (for stacked chart + daily table)
     daily_resp = client.get_cost_and_usage(
         TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
         Granularity="DAILY",
@@ -843,16 +859,24 @@ def fetch_costs(
         GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
     )
     daily_labels: list[str] = []
-    # date -> {service: cost}
+    # date -> {service: cost} (for stacked chart; tiny lines may be omitted from series)
     daily_by_svc: dict[str, dict[str, float]] = {}
     svc_totals: dict[str, float] = defaultdict(float)
+    daily_full: dict[str, float] = {}
     for r in daily_resp["ResultsByTime"]:
         day = r["TimePeriod"]["Start"]
         daily_labels.append(day)
         daily_by_svc[day] = {}
+        total_metrics = r.get("Total") or {}
+        if "UnblendedCost" in total_metrics:
+            daily_full[day] = float(total_metrics["UnblendedCost"]["Amount"])
+        else:
+            daily_full[day] = 0.0
         for g in r.get("Groups", []):
             name = g["Keys"][0]
             amount = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            if "UnblendedCost" not in total_metrics:
+                daily_full[day] += amount
             if amount < 0.005:
                 continue
             daily_by_svc[day][name] = amount
@@ -862,10 +886,8 @@ def fetch_costs(
     chart_series = build_stacked_series(daily_labels, daily_by_svc, svc_totals, top_n=8)
 
     daily: list[dict] = [
-        {"date": d, "cost": round(sum(daily_by_svc.get(d, {}).values()), 2)}
-        for d in daily_labels
+        {"date": d, "cost": round(daily_full.get(d, 0.0), 2)} for d in daily_labels
     ]
-    total_cost = round(sum(d["cost"] for d in daily), 2)
 
     # --- Untagged services only (ABSENT cost-usage tag) ---
     # Breakdown of the (untagged) row from the tag table.
@@ -1055,15 +1077,21 @@ def fetch_monthly_trend(
         label = month_date.strftime("%b %Y")
         labels.append(label)
         by_month[label] = {}
-        month_sum = 0.0
+        # Month total from CE Total metric (same basis as header total_cost)
+        total_metrics = r.get("Total") or {}
+        if "UnblendedCost" in total_metrics:
+            month_sum = float(total_metrics["UnblendedCost"]["Amount"])
+        else:
+            month_sum = 0.0
         for g in r.get("Groups", []):
             name = g["Keys"][0]
             amount = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            if "UnblendedCost" not in total_metrics:
+                month_sum += amount
             if amount < 0.005:
                 continue
             by_month[label][name] = amount
             totals[name] += amount
-            month_sum += amount
         month_totals.append(month_sum)
 
     series = build_stacked_series(labels, by_month, totals, top_n=8)
