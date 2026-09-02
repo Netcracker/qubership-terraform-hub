@@ -10,11 +10,15 @@ AWS Cost Report Generator (private S3)
 - Writes S3 paths to GitHub Actions Job Summary
 """
 
+# pylint: disable=consider-using-max-builtin
+# pylint: disable=import-outside-toplevel
+# pylint: disable=missing-class-docstring,missing-function-docstring
+# pylint: disable=too-many-arguments,too-many-branches,too-many-lines
+# pylint: disable=too-many-locals,too-many-positional-arguments,too-many-statements
+
 from __future__ import annotations
 
 import argparse
-import csv
-import io
 import json
 import os
 from collections import defaultdict
@@ -29,6 +33,7 @@ except ImportError:  # allow local demo without AWS SDK
 
     class ClientError(Exception):  # type: ignore
         pass
+
 
 from jinja2 import Template
 
@@ -180,7 +185,9 @@ REPORT_TEMPLATE = """
     </div>
 
     <div class="chart-card">
-      <h2 style="margin-bottom:1rem;font-size:1.1rem">Monthly trend (last {{ trend_months }} months)</h2>
+      <h2 style="margin-bottom:1rem;font-size:1.1rem">
+        Monthly trend (last {{ trend_months }} months)
+      </h2>
       <canvas id="trendChart" height="120"></canvas>
     </div>
     {% if trend_rows %}
@@ -265,7 +272,9 @@ REPORT_TEMPLATE = """
           <td class="cost">${{ "%.2f"|format(t.amortized) }}</td>
           <td>
             {{ "%.1f"|format(t.share) }}%
-            <div class="bar"><div class="bar-fill" style="width:{{ [t.share, 100]|min }}%"></div></div>
+            <div class="bar">
+              <div class="bar-fill" style="width:{{ [t.share, 100]|min }}%"></div>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -301,7 +310,9 @@ REPORT_TEMPLATE = """
           <td class="cost">${{ "%.2f"|format(s.amortized) }}</td>
           <td>
             {{ "%.1f"|format(s.share) }}%
-            <div class="bar"><div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div></div>
+            <div class="bar">
+              <div class="bar-fill" style="width:{{ [s.share, 100]|min }}%"></div>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -645,7 +656,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--s3-bucket", required=True)
     p.add_argument("--s3-prefix", default="aws-cost-reports")
     p.add_argument("--run-id", default="local")
-    p.add_argument("--local-dir", default="", help="Also write files locally (optional)")
+    p.add_argument(
+        "--local-dir", default="", help="Also write files locally (optional)"
+    )
     return p.parse_args()
 
 
@@ -703,13 +716,13 @@ def shift_month(d: date, delta: int) -> date:
 
 
 CHART_COLORS = [
-    "rgba(56, 189, 248, 0.85)",   # sky
-    "rgba(52, 211, 153, 0.85)",   # emerald
-    "rgba(251, 191, 36, 0.85)",   # amber
+    "rgba(56, 189, 248, 0.85)",  # sky
+    "rgba(52, 211, 153, 0.85)",  # emerald
+    "rgba(251, 191, 36, 0.85)",  # amber
     "rgba(248, 113, 113, 0.85)",  # red
     "rgba(167, 139, 250, 0.85)",  # violet
-    "rgba(251, 146, 60, 0.85)",   # orange
-    "rgba(45, 212, 191, 0.85)",   # teal
+    "rgba(251, 146, 60, 0.85)",  # orange
+    "rgba(45, 212, 191, 0.85)",  # teal
     "rgba(244, 114, 182, 0.85)",  # pink
     "rgba(148, 163, 184, 0.85)",  # slate (Other)
 ]
@@ -771,7 +784,10 @@ TAG_DESCRIPTIONS: dict[str, dict] = {
     "pioneer": {
         "summary": "Qubership sandbox environment.",
         "resources": [
-            "EKS Kubernetes cluster (VPC, NAT gateway, node groups, EBS volumes, ELB), and related resources",
+            (
+                "EKS Kubernetes cluster (VPC, NAT gateway, node groups, "
+                "EBS volumes, ELB), and related resources"
+            ),
         ],
         "owner": "Qubership DevOps team",
         "notes": None,
@@ -810,7 +826,9 @@ def build_stacked_series(
         series.append(
             {
                 "label": name,
-                "data": [round(by_key.get(lab, {}).get(name, 0.0), 2) for lab in labels],
+                "data": [
+                    round(by_key.get(lab, {}).get(name, 0.0), 2) for lab in labels
+                ],
                 "backgroundColor": CHART_COLORS[i % (len(CHART_COLORS) - 1)],
             }
         )
@@ -835,8 +853,10 @@ def fetch_costs(
     end: date,
     tag_key: str = "cost-usage",
     include_usage: bool = False,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[str], list[dict], float]:
-    """Return (daily, untagged_services, usage_rows, tag_rows, daily_labels, chart_series, total_cost).
+) -> tuple[
+    list[dict], list[dict], list[dict], list[dict], list[str], list[dict], float
+]:
+    """Return daily, service, usage, tag, chart, and total report data.
 
     untagged_services: costs by SERVICE filtered to resources without `tag_key`
       (breakdown of the (untagged) row in the tag table).
@@ -914,12 +934,18 @@ def fetch_costs(
             },
             GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
         )
-        svc_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
+        svc_agg: dict[str, dict] = defaultdict(
+            lambda: {"unblended": 0.0, "amortized": 0.0}
+        )
         for r in untagged_resp["ResultsByTime"]:
             for g in r.get("Groups", []):
                 name = g["Keys"][0]
-                svc_agg[name]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
-                svc_agg[name]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
+                svc_agg[name]["unblended"] += float(
+                    g["Metrics"]["UnblendedCost"]["Amount"]
+                )
+                svc_agg[name]["amortized"] += float(
+                    g["Metrics"]["AmortizedCost"]["Amount"]
+                )
 
         for name, v in svc_agg.items():
             if v["unblended"] < 0.005 and v["amortized"] < 0.005:
@@ -942,7 +968,9 @@ def fetch_costs(
         # Prefer top untagged services; fall back to overall top from daily totals
         top_for_usage = [s["name"] for s in services[:25]]
         if not top_for_usage:
-            top_for_usage = [n for n, _ in sorted(svc_totals.items(), key=lambda x: -x[1])[:25]]
+            top_for_usage = [
+                n for n, _ in sorted(svc_totals.items(), key=lambda x: -x[1])[:25]
+            ]
 
         usage_agg: dict[tuple[str, str, str], dict] = defaultdict(
             lambda: {"unblended": 0.0, "quantity": 0.0, "unit": "N/A"}
@@ -968,7 +996,8 @@ def fetch_costs(
                     region_raw, usage_type = g["Keys"][0], g["Keys"][1]
                     region = (
                         region_raw
-                        if region_raw and region_raw not in ("NoRegion", "NoRegion$", "")
+                        if region_raw
+                        and region_raw not in ("NoRegion", "NoRegion$", "")
                         else "global"
                     )
                     unblended = float(g["Metrics"]["UnblendedCost"]["Amount"])
@@ -1014,7 +1043,9 @@ def fetch_costs(
             Metrics=["UnblendedCost", "AmortizedCost"],
             GroupBy=[{"Type": "TAG", "Key": tag_key}],
         )
-        tag_agg: dict[str, dict] = defaultdict(lambda: {"unblended": 0.0, "amortized": 0.0})
+        tag_agg: dict[str, dict] = defaultdict(
+            lambda: {"unblended": 0.0, "amortized": 0.0}
+        )
         for r in tag_resp["ResultsByTime"]:
             for g in r.get("Groups", []):
                 raw = g["Keys"][0] if g.get("Keys") else ""
@@ -1025,8 +1056,12 @@ def fetch_costs(
                     value = raw
                 if not value:
                     value = "(untagged)"
-                tag_agg[value]["unblended"] += float(g["Metrics"]["UnblendedCost"]["Amount"])
-                tag_agg[value]["amortized"] += float(g["Metrics"]["AmortizedCost"]["Amount"])
+                tag_agg[value]["unblended"] += float(
+                    g["Metrics"]["UnblendedCost"]["Amount"]
+                )
+                tag_agg[value]["amortized"] += float(
+                    g["Metrics"]["AmortizedCost"]["Amount"]
+                )
 
         for name, v in tag_agg.items():
             if v["unblended"] < 0.005 and v["amortized"] < 0.005:
@@ -1138,7 +1173,9 @@ def build_report_html(
         total_cost = sum(s["unblended"] for s in services)
     untagged_total = sum(s["unblended"] for s in services)
     for s in services:
-        s["share"] = (s["unblended"] / untagged_total * 100) if untagged_total > 0 else 0.0
+        s["share"] = (
+            (s["unblended"] / untagged_total * 100) if untagged_total > 0 else 0.0
+        )
 
     last_day = end - timedelta(days=1)
     period_label = f"{start.strftime('%d %b %Y')} — {last_day.strftime('%d %b %Y')}"
@@ -1253,7 +1290,16 @@ def _legend_text() -> str:
     """Multi-line legend for the Cost Report sheet (matches management XLSX)."""
     lines: list[str] = ["Legend:"]
     # Stable presentation order (include untagged first as in the template note)
-    order = ["(untagged)", "common", "Istio-SVT", "api-hub", "cncf_report", "github-runner", "pioneer", "qstp"]
+    order = [
+        "(untagged)",
+        "common",
+        "Istio-SVT",
+        "api-hub",
+        "cncf_report",
+        "github-runner",
+        "pioneer",
+        "qstp",
+    ]
     seen: set[str] = set()
     for key in order:
         desc = TAG_DESCRIPTIONS.get(key) or TAG_DESCRIPTIONS.get(
@@ -1307,7 +1353,9 @@ def build_tag_costs_xlsx(
     path.parent.mkdir(parents=True, exist_ok=True)
     ordered = _ordered_tag_names(by_tag)
     last_day = period_end_exclusive - timedelta(days=1)
-    generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = generated_at or datetime.now(timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     wb = Workbook()
 
@@ -1375,7 +1423,9 @@ def build_tag_costs_xlsx(
     for i, line in enumerate(_legend_text().splitlines()):
         ws.append([line])
         cell = ws.cell(ws.max_row, 1)
-        cell.font = legend_font_title if (i == 0 or line.startswith(" • ")) else legend_font
+        cell.font = (
+            legend_font_title if (i == 0 or line.startswith(" • ")) else legend_font
+        )
         cell.alignment = Alignment(wrap_text=True, vertical="top")
         ws.row_dimensions[ws.max_row].height = 16
 
@@ -1393,13 +1443,19 @@ def build_tag_costs_xlsx(
     info.merge_cells("A1:B1")
 
     info_rows = [
-        ("Report Period:", f"{period_start.isoformat()} to {period_end_exclusive.isoformat()}"),
+        (
+            "Report Period:",
+            f"{period_start.isoformat()} to {period_end_exclusive.isoformat()}",
+        ),
         ("Generated:", generated_at),
         ("Total Tag Values:", len(ordered)),
         ("Total Days:", len(day_labels)),
         ("Data Source:", "AWS Cost Explorer"),
         ("Group By:", "Tag: cost-usage"),
-        ("Period (inclusive end):", f"{period_start.isoformat()} — {last_day.isoformat()}"),
+        (
+            "Period (inclusive end):",
+            f"{period_start.isoformat()} — {last_day.isoformat()}",
+        ),
     ]
     for i, (k, v) in enumerate(info_rows, start=3):
         info.cell(i, 1, k).font = Font(bold=True)
@@ -1438,13 +1494,12 @@ def build_report_pdf(
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.platypus import (
+            HRFlowable,
             Paragraph,
             SimpleDocTemplate,
             Spacer,
             Table,
             TableStyle,
-            HRFlowable,
-            KeepTogether,
         )
     except ImportError:
         print(
@@ -1465,10 +1520,7 @@ def build_report_pdf(
     muted = colors.HexColor("#64748b")
     line = colors.HexColor("#e2e8f0")
     header_bg = colors.HexColor("#f1f5f9")
-    accent = colors.HexColor("#0369a1")
     row_alt = colors.HexColor("#f8fafc")
-    up = colors.HexColor("#b91c1c")
-    down = colors.HexColor("#047857")
 
     styles = getSampleStyleSheet()
     styles.add(
@@ -1567,7 +1619,7 @@ def build_report_pdf(
             return Paragraph(f'<font color="#047857">{v:.1f}%</font>', styles["Num"])
         return Paragraph("0.0%", styles["Num"])
 
-    def table_style(ncols: int) -> TableStyle:
+    def table_style(_ncols: int) -> TableStyle:
         return TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), header_bg),
@@ -1647,10 +1699,11 @@ def build_report_pdf(
         col_w = [28 * mm, 22 * mm] * cols
         # split days into `cols` vertical strips
         per_col = (n + cols - 1) // cols
-        strips: list[list[dict]] = [
-            daily[i * per_col : (i + 1) * per_col] for i in range(cols)
-        ]
-        max_rows = max(len(s) for s in strips)
+        strips: list[list[dict]] = []
+        for start_idx in range(0, cols * per_col, per_col):
+            end_idx = start_idx + per_col
+            strips.append(daily[start_idx:end_idx])
+        max_rows = max(len(strip) for strip in strips)
         header = []
         for _ in range(cols):
             header.extend(
@@ -1662,10 +1715,10 @@ def build_report_pdf(
         rows = [header]
         for r in range(max_rows):
             row = []
-            for s in strips:
-                if r < len(s):
-                    row.append(Paragraph(s[r]["date"], styles["Cell"]))
-                    row.append(Paragraph(money(s[r]["cost"]), styles["Num"]))
+            for strip in strips:
+                if r < len(strip):
+                    row.append(Paragraph(strip[r]["date"], styles["Cell"]))
+                    row.append(Paragraph(money(strip[r]["cost"]), styles["Num"]))
                 else:
                     row.append(Paragraph("", styles["Cell"]))
                     row.append(Paragraph("", styles["Cell"]))
@@ -1703,11 +1756,13 @@ def build_report_pdf(
         story.append(
             Paragraph(f"Monthly trend (last {trend_months} months)", styles["Sec"])
         )
-        rows = [[
-            Paragraph("Month", styles["CellMuted"]),
-            Paragraph("Unblended", styles["CellMuted"]),
-            Paragraph("Change", styles["CellMuted"]),
-        ]]
+        rows = [
+            [
+                Paragraph("Month", styles["CellMuted"]),
+                Paragraph("Unblended", styles["CellMuted"]),
+                Paragraph("Change", styles["CellMuted"]),
+            ]
+        ]
         for t in trend_rows:
             rows.append(
                 [
@@ -1730,13 +1785,15 @@ def build_report_pdf(
         )
     )
     if tag_rows:
-        rows = [[
-            Paragraph("Tag value", styles["CellMuted"]),
-            Paragraph("Unblended", styles["CellMuted"]),
-            Paragraph("Amortized", styles["CellMuted"]),
-            Paragraph("Share", styles["CellMuted"]),
-            Paragraph("Description", styles["CellMuted"]),
-        ]]
+        rows = [
+            [
+                Paragraph("Tag value", styles["CellMuted"]),
+                Paragraph("Unblended", styles["CellMuted"]),
+                Paragraph("Amortized", styles["CellMuted"]),
+                Paragraph("Share", styles["CellMuted"]),
+                Paragraph("Description", styles["CellMuted"]),
+            ]
+        ]
         for t in tag_rows:
             desc = t.get("desc") or {}
             summary = desc.get("summary") if isinstance(desc, dict) else ""
@@ -1773,19 +1830,21 @@ def build_report_pdf(
         )
     )
     if services:
-        rows = [[
-            Paragraph("Service", styles["CellMuted"]),
-            Paragraph("Unblended", styles["CellMuted"]),
-            Paragraph("Amortized", styles["CellMuted"]),
-            Paragraph("Share", styles["CellMuted"]),
-        ]]
-        for s in services:
+        rows = [
+            [
+                Paragraph("Service", styles["CellMuted"]),
+                Paragraph("Unblended", styles["CellMuted"]),
+                Paragraph("Amortized", styles["CellMuted"]),
+                Paragraph("Share", styles["CellMuted"]),
+            ]
+        ]
+        for service in services:
             rows.append(
                 [
-                    Paragraph(str(s["name"]), styles["Cell"]),
-                    Paragraph(money(s["unblended"]), styles["Num"]),
-                    Paragraph(money(s["amortized"]), styles["Num"]),
-                    Paragraph(f"{s.get('share', 0):.1f}%", styles["Num"]),
+                    Paragraph(str(service["name"]), styles["Cell"]),
+                    Paragraph(money(service["unblended"]), styles["Num"]),
+                    Paragraph(money(service["amortized"]), styles["Num"]),
+                    Paragraph(f"{service.get('share', 0):.1f}%", styles["Num"]),
                 ]
             )
         t = Table(rows, colWidths=[95 * mm, 28 * mm, 28 * mm, 22 * mm])
@@ -1805,14 +1864,16 @@ def build_report_pdf(
                 styles["BodyMuted"],
             )
         )
-        rows = [[
-            Paragraph("Service", styles["CellMuted"]),
-            Paragraph("Region", styles["CellMuted"]),
-            Paragraph("Usage type", styles["CellMuted"]),
-            Paragraph("Unblended", styles["CellMuted"]),
-            Paragraph("Qty", styles["CellMuted"]),
-            Paragraph("Unit", styles["CellMuted"]),
-        ]]
+        rows = [
+            [
+                Paragraph("Service", styles["CellMuted"]),
+                Paragraph("Region", styles["CellMuted"]),
+                Paragraph("Usage type", styles["CellMuted"]),
+                Paragraph("Unblended", styles["CellMuted"]),
+                Paragraph("Qty", styles["CellMuted"]),
+                Paragraph("Unit", styles["CellMuted"]),
+            ]
+        ]
         for u in usage_rows[:40]:
             rows.append(
                 [
@@ -1824,7 +1885,9 @@ def build_report_pdf(
                     Paragraph(str(u.get("unit", "")), styles["Cell"]),
                 ]
             )
-        t = Table(rows, colWidths=[42 * mm, 22 * mm, 42 * mm, 22 * mm, 22 * mm, 18 * mm])
+        t = Table(
+            rows, colWidths=[42 * mm, 22 * mm, 42 * mm, 22 * mm, 22 * mm, 18 * mm]
+        )
         t.setStyle(table_style(6))
         story.append(t)
 
@@ -1857,7 +1920,7 @@ def build_report_pdf(
         return False
 
 
-def html_to_pdf(html: str, pdf_path: Path) -> bool:
+def html_to_pdf(_html: str, _pdf_path: Path) -> bool:
     """Deprecated browser PDF path — kept for compatibility; prefer build_report_pdf."""
     print(
         "Warning: html_to_pdf (Chromium) is deprecated; use build_report_pdf instead."
@@ -1866,6 +1929,7 @@ def html_to_pdf(html: str, pdf_path: Path) -> bool:
 
 
 def s3_key(prefix: str, *parts: str) -> str:
+    """Join S3 path parts while trimming duplicate slashes."""
     return "/".join(p.strip("/") for p in (prefix, *parts) if p)
 
 
@@ -1881,7 +1945,8 @@ def list_existing_reports(s3, bucket: str, prefix: str) -> list[dict]:
             try:
                 body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
                 meta = json.loads(body)
-                folder = key[len(prefix.rstrip("/")) + 1 :].rsplit("/", 1)[0]
+                folder_start = len(prefix.rstrip("/")) + 1
+                folder = key[folder_start:].rsplit("/", 1)[0]
                 meta["path"] = f"{folder}/index.html"
                 reports.append(meta)
             except (ClientError, json.JSONDecodeError, KeyError) as e:
@@ -1890,7 +1955,9 @@ def list_existing_reports(s3, bucket: str, prefix: str) -> list[dict]:
     return reports
 
 
-def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str) -> None:
+def upload_file(
+    s3, bucket: str, key: str, body: str | bytes, content_type: str
+) -> None:
     extra = {
         "ContentType": content_type,
         "CacheControl": "no-cache" if key.endswith("index.html") else "max-age=3600",
@@ -1898,7 +1965,6 @@ def upload_file(s3, bucket: str, key: str, body: str | bytes, content_type: str)
     # Private by default — do NOT set ACL public-read
     s3.put_object(Bucket=bucket, Key=key, Body=body, **extra)
     print(f"  uploaded s3://{bucket}/{key}")
-
 
 
 def write_job_summary(
@@ -1928,7 +1994,6 @@ def write_job_summary(
         print(f"Job Summary updated → {summary_path}")
     else:
         print("(GITHUB_STEP_SUMMARY not set — summary only printed above)")
-
 
 
 def download_invoices_for_billing_period(
@@ -2023,8 +2088,12 @@ def download_invoices_for_billing_period(
             sup_id = sup.get("DocumentId") or "supplement"
             if not sup_url:
                 continue
-            safe_sup = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(sup_id))
-            sup_dest = out_dir / f"invoice_{year:04d}-{month:02d}_{safe_id}_{safe_sup}.pdf"
+            safe_sup = "".join(
+                c if c.isalnum() or c in "-_" else "_" for c in str(sup_id)
+            )
+            sup_dest = (
+                out_dir / f"invoice_{year:04d}-{month:02d}_{safe_id}_{safe_sup}.pdf"
+            )
             try:
                 with urllib.request.urlopen(sup_url, timeout=120) as resp:
                     sup_dest.write_bytes(resp.read())
@@ -2084,7 +2153,9 @@ def main() -> None:
 
     # Daily costs by tag → XLSX (management format)
     try:
-        xlsx_days, xlsx_by_tag = fetch_daily_costs_by_tag(ce, start, end, tag_key="cost-usage")
+        xlsx_days, xlsx_by_tag = fetch_daily_costs_by_tag(
+            ce, start, end, tag_key="cost-usage"
+        )
         print(f"  costs XLSX data: {len(xlsx_by_tag)} tags × {len(xlsx_days)} days")
     except ClientError as e:
         print(f"  costs by tag fetch skipped: {e}")
@@ -2119,9 +2190,11 @@ def main() -> None:
         xlsx_by_tag,
         period_start=start,
         period_end_exclusive=end,
-        generated_at=generated_at.replace(" UTC", "").strip()
-        if generated_at.endswith("UTC")
-        else generated_at,
+        generated_at=(
+            generated_at.replace(" UTC", "").strip()
+            if generated_at.endswith("UTC")
+            else generated_at
+        ),
     )
     (report_dir / "costs.xlsx").write_bytes(costs_xlsx_path.read_bytes())
 
@@ -2140,7 +2213,9 @@ def main() -> None:
         run_id=args.run_id,
     )
     if pdf_ok:
-        (report_dir / "report.pdf").write_bytes((local_root / "report.pdf").read_bytes())
+        (report_dir / "report.pdf").write_bytes(
+            (local_root / "report.pdf").read_bytes()
+        )
 
     invoice_paths: list[Path] = []
     if args.fetch_invoice:
@@ -2177,9 +2252,7 @@ def main() -> None:
         "<p>AWS Cost Report is attached.</p>\n"
         f"<p>Period: {period_label}</p>\n"
         f"<p>Generated: {generated_at}</p>\n"
-        "<ul>\n"
-        + "\n".join(email_attachments_note)
-        + "\n</ul>\n"
+        "<ul>\n" + "\n".join(email_attachments_note) + "\n</ul>\n"
     )
     (local_root / "email-body.html").write_text(email_body, encoding="utf-8")
     print(f"Local copy written to {report_dir}")
@@ -2221,7 +2294,8 @@ def main() -> None:
 
     reports = list_existing_reports(s3, args.s3_bucket, prefix)
     if not any(
-        r.get("period_start") == start.isoformat() and r.get("period_end") == last_day.isoformat()
+        r.get("period_start") == start.isoformat()
+        and r.get("period_end") == last_day.isoformat()
         for r in reports
     ):
         reports.insert(0, {**meta, "path": f"{folder_name}/index.html"})
