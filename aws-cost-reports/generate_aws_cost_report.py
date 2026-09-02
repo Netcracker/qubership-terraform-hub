@@ -4,7 +4,7 @@ AWS Cost Report Generator (private S3)
 - Fetches data from Cost Explorer
 - Generates HTML report with daily chart, tag breakdown, and untagged-by-service
 - Generates PDF report (optional, requires reportlab)
-- Exports daily spend by cost-usage tag to costs.csv
+- Exports daily spend by cost-usage tag to costs.xlsx
 - "Usage by type" is optional (--include-usage)
 - Uploads HTML, PDF, CSV (+ meta/index) to a private S3 bucket
 - Writes S3 paths to GitHub Actions Job Summary
@@ -234,7 +234,7 @@ REPORT_TEMPLATE = """
         <tr>
           <td>
             <code style="color:var(--text)">{{ t.name }}</code>
-            {# {% if t.desc %}
+            {% if t.desc %}
             <details class="tag-desc">
               <summary>description</summary>
               <div class="tag-desc-body">
@@ -259,7 +259,7 @@ REPORT_TEMPLATE = """
                 {% endif %}
               </div>
             </details>
-            {% endif %} #}
+            {% endif %}
           </td>
           <td class="cost">${{ "%.2f"|format(t.unblended) }}</td>
           <td class="cost">${{ "%.2f"|format(t.amortized) }}</td>
@@ -1226,43 +1226,181 @@ def fetch_daily_costs_by_tag(
     return day_labels, {k: dict(v) for k, v in by_tag.items()}
 
 
-def build_tag_costs_csv(
-    day_labels: list[str],
-    by_tag: dict[str, dict[str, float]],
-) -> str:
-    """Build CSV matching the costs.csv template (daily columns + Total)."""
+def _ordered_tag_names(by_tag: dict[str, dict[str, float]]) -> list[str]:
     tags_present = set(by_tag.keys())
     ordered: list[str] = []
     for name in CSV_TAG_ORDER:
         if name in tags_present:
             ordered.append(name)
             tags_present.discard(name)
-    # remaining (except untagged) alphabetical
     rest = sorted(t for t in tags_present if t != "untagged")
     ordered.extend(rest)
     if "untagged" in by_tag or "untagged" in tags_present:
         ordered.append("untagged")
+    return ordered
 
-    buf = io.StringIO()
-    writer = csv.writer(buf, lineterminator="\n")
+
+def _legend_text() -> str:
+    """Multi-line legend for the Cost Report sheet (matches management XLSX)."""
+    lines: list[str] = ["Legend:"]
+    # Stable presentation order (include untagged first as in the template note)
+    order = ["(untagged)", "common", "Istio-SVT", "api-hub", "cncf_report", "github-runner", "pioneer", "qstp"]
+    seen: set[str] = set()
+    for key in order:
+        desc = TAG_DESCRIPTIONS.get(key) or TAG_DESCRIPTIONS.get(
+            "untagged" if key == "(untagged)" else key
+        )
+        if not desc:
+            continue
+        seen.add(key.lower())
+        label = "untagged" if key == "(untagged)" else key
+        lines.append(f" • '{label}' - {desc.get('summary', '').rstrip('.')}.")
+        resources = desc.get("resources") or []
+        if resources:
+            if len(resources) == 1:
+                lines.append(f"   - Resources: {resources[0]}")
+            else:
+                lines.append("   - Resources:")
+                for r in resources:
+                    lines.append(f"     - {r}")
+        owner = desc.get("owner")
+        if owner:
+            lines.append(f"   - Owner: {owner}")
+    for key, desc in TAG_DESCRIPTIONS.items():
+        if key.lower() in seen or key == "(untagged)":
+            continue
+        lines.append(f" • '{key}' - {desc.get('summary', '').rstrip('.')}.")
+        if desc.get("owner"):
+            lines.append(f"   - Owner: {desc['owner']}")
+    lines.append(
+        " Note: The 'untagged' line typically shows a significant spike on the 1st "
+        "of the month due to the TAX fee application, while other lines represent "
+        "properly tagged project resources."
+    )
+    return "\n".join(lines)
+
+
+def build_tag_costs_xlsx(
+    path: Path,
+    day_labels: list[str],
+    by_tag: dict[str, dict[str, float]],
+    *,
+    period_start: date,
+    period_end_exclusive: date,
+    generated_at: str | None = None,
+) -> Path:
+    """Write costs.xlsx with sheets 'Cost Report' and 'Info' (management format)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ordered = _ordered_tag_names(by_tag)
+    last_day = period_end_exclusive - timedelta(days=1)
+    generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    wb = Workbook()
+
+    # --- Sheet: Cost Report ---
+    ws = wb.active
+    ws.title = "Cost Report"
+
     header = ["Tag value (cost-usage)", *day_labels, "Total costs($)"]
-    writer.writerow(header)
+    ws.append(header)
+
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill("solid", fgColor="E2E8F0")
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    money_format = "0.00"
+    total_font = Font(bold=True, size=11)
+    total_fill = PatternFill("solid", fgColor="F1F5F9")
+
+    for col in range(1, len(header) + 1):
+        cell = ws.cell(1, col)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
     day_totals = {day: 0.0 for day in day_labels}
     for tag in ordered:
-        row_amounts = []
+        row_vals: list = [tag]
         total = 0.0
         for day in day_labels:
-            amt = float(by_tag.get(tag, {}).get(day, 0.0))
-            row_amounts.append(f"{amt:.2f}")
+            amt = round(float(by_tag.get(tag, {}).get(day, 0.0)), 2)
+            row_vals.append(amt)
             total += amt
             day_totals[day] += amt
-        writer.writerow([tag, *row_amounts, f"{total:.2f}"])
+        row_vals.append(round(total, 2))
+        ws.append(row_vals)
+        r = ws.max_row
+        for c in range(1, len(row_vals) + 1):
+            cell = ws.cell(r, c)
+            cell.border = border
+            if c > 1:
+                cell.number_format = money_format
+                cell.alignment = Alignment(horizontal="right")
 
-    total_row = [f"{day_totals[d]:.2f}" for d in day_labels]
-    grand = sum(day_totals.values())
-    writer.writerow(["TOTAL", *total_row, f"{grand:.2f}"])
-    return buf.getvalue()
+    # TOTAL row
+    total_row: list = ["TOTAL"]
+    for day in day_labels:
+        total_row.append(round(day_totals[day], 2))
+    total_row.append(round(sum(day_totals.values()), 2))
+    ws.append(total_row)
+    r = ws.max_row
+    for c in range(1, len(total_row) + 1):
+        cell = ws.cell(r, c)
+        cell.font = total_font
+        cell.fill = total_fill
+        cell.border = border
+        if c > 1:
+            cell.number_format = money_format
+            cell.alignment = Alignment(horizontal="right")
+
+    # blank row + legend (one Excel row per text line → always full height, no collapse)
+    ws.append([])
+    legend_font = Font(size=9, color="475569")
+    legend_font_title = Font(size=9, color="475569", bold=True)
+    for i, line in enumerate(_legend_text().splitlines()):
+        ws.append([line])
+        cell = ws.cell(ws.max_row, 1)
+        cell.font = legend_font_title if (i == 0 or line.startswith(" • ")) else legend_font
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[ws.max_row].height = 16
+
+    # column widths
+    last_col = len(header)
+    ws.column_dimensions["A"].width = 100
+    for i in range(2, last_col + 1):
+        ws.column_dimensions[get_column_letter(i)].width = 12
+    ws.freeze_panes = "B2"
+
+    # --- Sheet: Info ---
+    info = wb.create_sheet("Info")
+    info["A1"] = "Cost Report Information"
+    info["A1"].font = Font(bold=True, size=14)
+    info.merge_cells("A1:B1")
+
+    info_rows = [
+        ("Report Period:", f"{period_start.isoformat()} to {period_end_exclusive.isoformat()}"),
+        ("Generated:", generated_at),
+        ("Total Tag Values:", len(ordered)),
+        ("Total Days:", len(day_labels)),
+        ("Data Source:", "AWS Cost Explorer"),
+        ("Group By:", "Tag: cost-usage"),
+        ("Period (inclusive end):", f"{period_start.isoformat()} — {last_day.isoformat()}"),
+    ]
+    for i, (k, v) in enumerate(info_rows, start=3):
+        info.cell(i, 1, k).font = Font(bold=True)
+        info.cell(i, 2, v)
+    info.column_dimensions["A"].width = 28
+    info.column_dimensions["B"].width = 42
+
+    wb.save(path)
+    print(f"  XLSX written → {path}")
+    return path
 
 
 def build_report_pdf(
@@ -1770,7 +1908,7 @@ def write_job_summary(
     if pdf_s3:
         lines.append(f"- Report (PDF): `{pdf_s3}`")
     if csv_s3:
-        lines.append(f"- Costs by tag (CSV): `{csv_s3}`")
+        lines.append(f"- Costs by tag (XLSX): `{csv_s3}`")
     lines.extend([f"- Index: `{index_s3}`", ""])
     body = "\n".join(lines) + "\n"
     print("\n" + body)
@@ -1830,14 +1968,13 @@ def main() -> None:
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    # Daily costs by tag → CSV (template-compatible)
+    # Daily costs by tag → XLSX (management format)
     try:
-        csv_days, csv_by_tag = fetch_daily_costs_by_tag(ce, start, end, tag_key="cost-usage")
-        costs_csv = build_tag_costs_csv(csv_days, csv_by_tag)
-        print(f"  costs CSV: {len(csv_by_tag)} tags × {len(csv_days)} days")
+        xlsx_days, xlsx_by_tag = fetch_daily_costs_by_tag(ce, start, end, tag_key="cost-usage")
+        print(f"  costs XLSX data: {len(xlsx_by_tag)} tags × {len(xlsx_days)} days")
     except ClientError as e:
-        print(f"  costs CSV skipped: {e}")
-        costs_csv = build_tag_costs_csv([], {})
+        print(f"  costs by tag fetch skipped: {e}")
+        xlsx_days, xlsx_by_tag = [], {}
 
     folder_name = f"{start.isoformat()}_{last_day.isoformat()}"
     meta = {
@@ -1861,8 +1998,18 @@ def main() -> None:
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (local_root / "report.html").write_text(report_html, encoding="utf-8")
-    (local_root / "costs.csv").write_text(costs_csv, encoding="utf-8")
-    (report_dir / "costs.csv").write_text(costs_csv, encoding="utf-8")
+    costs_xlsx_path = local_root / "costs.xlsx"
+    build_tag_costs_xlsx(
+        costs_xlsx_path,
+        xlsx_days,
+        xlsx_by_tag,
+        period_start=start,
+        period_end_exclusive=end,
+        generated_at=generated_at.replace(" UTC", "").strip()
+        if generated_at.endswith("UTC")
+        else generated_at,
+    )
+    (report_dir / "costs.xlsx").write_bytes(costs_xlsx_path.read_bytes())
 
     pdf_ok = build_report_pdf(
         local_root / "report.pdf",
@@ -1888,7 +2035,7 @@ def main() -> None:
         "<ul>\n"
         "  <li><strong>report.html</strong> — full interactive report</li>\n"
         "  <li><strong>report.pdf</strong> — compact printable summary (same data)</li>\n"
-        "  <li><strong>costs.csv</strong> — daily spend by cost-usage tag</li>\n"
+        "  <li><strong>costs.xlsx</strong> — daily spend by cost-usage tag</li>\n"
         "</ul>\n"
     )
     (local_root / "email-body.html").write_text(email_body, encoding="utf-8")
@@ -1899,7 +2046,7 @@ def main() -> None:
 
     report_key = s3_key(prefix, folder_name, "index.html")
     meta_key = s3_key(prefix, folder_name, "meta.json")
-    csv_key = s3_key(prefix, folder_name, "costs.csv")
+    xlsx_key = s3_key(prefix, folder_name, "costs.xlsx")
     pdf_key = s3_key(prefix, folder_name, "report.pdf")
 
     print(f"Uploading report → s3://{args.s3_bucket}/{report_key}")
@@ -1911,7 +2058,13 @@ def main() -> None:
         json.dumps(meta, ensure_ascii=False, indent=2),
         "application/json",
     )
-    upload_file(s3, args.s3_bucket, csv_key, costs_csv, "text/csv; charset=utf-8")
+    upload_file(
+        s3,
+        args.s3_bucket,
+        xlsx_key,
+        costs_xlsx_path.read_bytes(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     pdf_s3 = None
     if pdf_ok:
         upload_file(
@@ -1941,13 +2094,13 @@ def main() -> None:
 
     report_s3 = f"s3://{args.s3_bucket}/{report_key}"
     index_s3 = f"s3://{args.s3_bucket}/{index_key}"
-    csv_s3 = f"s3://{args.s3_bucket}/{csv_key}"
+    xlsx_s3 = f"s3://{args.s3_bucket}/{xlsx_key}"
 
     write_job_summary(
         report_s3=report_s3,
         index_s3=index_s3,
         pdf_s3=pdf_s3,
-        csv_s3=csv_s3,
+        csv_s3=xlsx_s3,
     )
 
     gh_out = os.environ.get("GITHUB_OUTPUT")

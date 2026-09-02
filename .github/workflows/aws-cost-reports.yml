@@ -49,7 +49,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install boto3 jinja2 reportlab
+        run: pip install boto3 jinja2 reportlab openpyxl
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -97,7 +97,7 @@ jobs:
         id: attach
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
         run: |
-          files=(out/report.html out/costs.csv)
+          files=(out/report.html out/costs.xlsx)
           if [ -f out/report.pdf ]; then
             files+=(out/report.pdf)
           else
