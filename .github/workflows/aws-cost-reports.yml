@@ -1,94 +1,143 @@
-name: Scheduled AWS cost reports
+name: AWS Cost Report
 
 on:
+  # 2nd of each month at 06:00 UTC — full previous calendar month, email always sent
+  # (2nd so the AWS invoice for the previous month is more likely already issued)
   schedule:
-    - cron: "0 5 2 * *"
+    - cron: '0 6 2 * *'
+  # Manual run with optional date range and optional email
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYY-MM-DD). Empty = first day of current month'
+        required: false
+        type: string
+      end_date:
+        description: 'End date (YYYY-MM-DD, inclusive). Empty = today'
+        required: false
+        type: string
+      trend_months:
+        description: 'Months of spend trend to include (default 3)'
+        required: false
+        type: string
+        default: '3'
+      include_usage:
+        description: 'Include the optional Usage by type table (extra API calls)'
+        required: false
+        type: boolean
+        default: false
+      include_invoice:
+        description: 'Download AWS invoice PDF for the report month and attach to email'
+        required: false
+        type: boolean
+        default: false
+      send_email:
+        description: 'Send the HTML report by email'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
-  aws-reporting:
+  generate-and-upload:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.9'
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          cd ./aws-cost-reports
-          pip install -r requirements.txt
+        run: pip install boto3 jinja2 reportlab openpyxl
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          # Cost Explorer API is only available in us-east-1; S3 client uses this region too
+          # unless the bucket is in another region (set AWS_REGION secret if needed)
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Generate cost report
+      - name: Generate report and upload to S3
+        id: report
+        env:
+          START_DATE: ${{ github.event.inputs.start_date }}
+          END_DATE: ${{ github.event.inputs.end_date }}
+          TREND_MONTHS: ${{ github.event.inputs.trend_months || '3' }}
+          INCLUDE_USAGE: ${{ github.event.inputs.include_usage }}
+          INCLUDE_INVOICE: ${{ github.event.inputs.include_invoice }}
+          S3_BUCKET: 'cve-reports-dev'
+          S3_PREFIX: 'aws-cost-reports'
+          RUN_ID: ${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          cd ./aws-cost-reports
-          python3.9 getreport.py
+          if [ -z "$S3_BUCKET" ]; then
+            echo "::error::Secret S3_BUCKET is not set"
+            exit 1
+          fi
+          EXTRA=()
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            EXTRA+=(--previous-month)
+            # Monthly run: try to attach AWS invoice PDF (warning only if missing)
+            EXTRA+=(--fetch-invoice)
+          fi
+          if [ "$INCLUDE_USAGE" = "true" ]; then
+            EXTRA+=(--include-usage)
+          fi
+          if [ "$INCLUDE_INVOICE" = "true" ]; then
+            EXTRA+=(--fetch-invoice)
+          fi
+          python aws-cost-reports/generate_aws_cost_report.py \
+            --start-date "${START_DATE:-}" \
+            --end-date "${END_DATE:-}" \
+            --trend-months "${TREND_MONTHS:-3}" \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-prefix "$S3_PREFIX" \
+            --run-id "$RUN_ID" \
+            --local-dir ./out \
+            "${EXTRA[@]}"
 
-      - name: Upload reports as artifacts
-        uses: actions/upload-artifact@v4
+      - name: Prepare email attachments
+        id: attach
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
+        run: |
+          files=(out/report.html out/costs.xlsx)
+          if [ -f out/report.pdf ]; then
+            files+=(out/report.pdf)
+          else
+            echo "::warning::report.pdf missing — email will go without report PDF"
+          fi
+          # AWS invoice PDFs (email only; not uploaded to S3)
+          if [ -d out/invoices ]; then
+            while IFS= read -r -d '' f; do
+              files+=("$f")
+            done < <(find out/invoices -type f -name '*.pdf' -print0 2>/dev/null)
+          fi
+          IFS=,
+          echo "list=${files[*]}" >> "$GITHUB_OUTPUT"
+          echo "Attachments: ${files[*]}"
+
+      - name: Send email
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
+        uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e  # v2.6.0
         with:
-          name: cost-reports
-          path: |
-            ./aws-cost-reports/costs.csv
-            ./aws-cost-reports/costs.xlsx
-          retention-days: 30
-
-      - name: Extract total cost from CSV
-        id: extract_total
-        run: |
-          # Extract the TOTAL row from CSV (last row, last column)
-          TOTAL_COST=$(tail -n 1 ./aws-cost-reports/costs.csv | awk -F ',' '{print $NF}' | tr -d '"')
-          echo "total_cost=${TOTAL_COST}" >> $GITHUB_OUTPUT
-          echo "Extracted total cost: ${TOTAL_COST} USD"
-
-      - name: Get current date and report period
-        id: date
-        run: |
-          echo "current_date=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
-          echo "report_month=$(date -d 'last month' '+%B %Y')" >> $GITHUB_OUTPUT
-          echo "report_period=$(date -d 'last month' '+%Y-%m')" >> $GITHUB_OUTPUT
-
-      - name: Send email notification
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
+          server-address: smtp.gmail.com
+          server-port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Qubership AWS Cost Report for ${{ steps.date.outputs.report_month }} - Total: $${{ steps.extract_total.outputs.total_cost }}"
-          body: |
-            Hello, Team
-
-            The monthly AWS cost report has been successfully generated.
-
-            📊 **REPORT SUMMARY**
-            - Period: ${{ steps.date.outputs.report_month }}
-            - Total Cost: $${{ steps.extract_total.outputs.total_cost }}
-            - Generated: ${{ steps.date.outputs.current_date }}
-            - Repository: ${{ github.repository }}
-
-            📎 **DOWNLOAD LINKS**
-            Artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Generated files:
-            • `costs.csv` (CSV format with daily breakdown)
-            • `costs.xlsx` (Excel format with formatting)
-
-            💡 *Note: The total cost includes all tagged and untagged resources for the period.*
-
-            Best regards,
-            AWS Cost Reporting System
+          from: 'AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>'
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
-          from: "AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>"
+          subject: AWS Cost Report — ${{ steps.report.outputs.period_label }}
+          html-body: file://out/email-body.html
+          # HTML + CSV + PDF (if generated)
+          attachments: ${{ steps.attach.outputs.list }}
