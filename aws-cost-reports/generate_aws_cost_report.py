@@ -859,7 +859,6 @@ def fetch_costs(
         if "UnblendedCost" in total_metrics:
             total_cost += float(total_metrics["UnblendedCost"]["Amount"])
     total_cost = round(total_cost, 2)
-    print(f"  period Total.UnblendedCost: ${total_cost:.2f}")
 
     # Daily costs broken down by service (for stacked chart + daily table)
     daily_resp = client.get_cost_and_usage(
@@ -1994,12 +1993,7 @@ def download_invoices_for_billing_period(
             print(f"  skip summary without InvoiceId: {s}")
             continue
         inv_type = s.get("InvoiceType") or "INVOICE"
-        amount = (
-            (s.get("BaseCurrencyAmount") or {}).get("TotalAmount")
-            or (s.get("TaxCurrencyAmount") or {}).get("TotalAmount")
-            or "?"
-        )
-        print(f"  invoice {invoice_id} type={inv_type} amount={amount}")
+        print(f"  invoice {invoice_id} type={inv_type}")
         try:
             pdf_resp = inv.get_invoice_pdf(InvoiceId=invoice_id)
         except ClientError as e:
@@ -2166,10 +2160,6 @@ def main() -> None:
                 "(--invoice-required). Check IAM invoicing:* permissions and that "
                 "the invoice has been issued."
             )
-        # Stable path for the first invoice (email action convenience)
-        if invoice_paths:
-            primary = local_root / "invoice.pdf"
-            primary.write_bytes(invoice_paths[0].read_bytes())
 
     email_attachments_note = [
         "  <li><strong>report.html</strong> — full interactive report</li>",

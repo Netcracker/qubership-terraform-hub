@@ -121,13 +121,6 @@ jobs:
               files+=("$f")
             done < <(find out/invoices -type f -name '*.pdf' -print0 2>/dev/null)
           fi
-          if [ -f out/invoice.pdf ]; then
-            # already covered via invoices/ usually; include primary alias if present alone
-            case " ${files[*]} " in
-              *" out/invoice.pdf "*) ;;
-              *) files+=(out/invoice.pdf) ;;
-            esac
-          fi
           IFS=,
           echo "list=${files[*]}" >> "$GITHUB_OUTPUT"
           echo "Attachments: ${files[*]}"
