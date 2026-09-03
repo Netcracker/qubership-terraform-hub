@@ -343,12 +343,9 @@ jobs:
           fi
 
       - name: Send email notification
-        uses: dawidd6/action-send-mail@v3
+        uses: netcracker/qubership-workflow-hub/actions/email-action@cabbb90e9471163cfac84bd50ff0296b2803b44c
         with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}		
           subject: "Allure reports - ${{ github.repository }} - ${{ steps.parse_path.outputs.TEST_TYPE }} - Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}"
           body: |
             Hello,
@@ -359,7 +356,6 @@ jobs:
             - Total Tests: ${{ steps.pass_rate.outputs.TOTAL_TESTS }}
             - Passed: ${{ steps.pass_rate.outputs.PASSED_TESTS }}
             - Skipped: ${{ steps.pass_rate.outputs.SKIPPED_TESTS }}
-            - Unknown: ${{ steps.pass_rate.outputs.UNKNOWN_TESTS }}
             - **Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}** (based on executed tests only)
           
             DOWNLOAD LINKS:
@@ -369,8 +365,6 @@ jobs:
           
             Best regards,
             DevOps Team
-          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
-          from: "Allure Reports <${{ secrets.SMTP_USERNAME }}>"
 
       - name: Trigger Results Push to Git
         uses: actions/github-script@v6
