@@ -345,7 +345,7 @@ jobs:
       - name: Send email notification
         uses: netcracker/qubership-workflow-hub/actions/email-action@f4a2c6f57cfdd620676d0dc7321491b33d7c214b
         env:
-          #EMAIL_FROM:      ${{ vars.EMAIL_FROM }}
+          EMAIL_FROM: Allure Reports
           EMAIL_PASSWORD:  ${{ secrets.EMAIL_PASSWORD }}
         with:
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}		
