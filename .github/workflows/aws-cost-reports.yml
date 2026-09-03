@@ -133,9 +133,9 @@ jobs:
         with:
           server-address: smtp.gmail.com
           server-port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          from: 'AWS Cost Reports <${{ secrets.SMTP_USERNAME }}>'
+          username: ${{ vars.EMAIL_FROM }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          from: 'AWS Cost Reports <${{ vars.EMAIL_FROM }}>'
           to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}
           subject: AWS Cost Report — ${{ steps.report.outputs.period_label }}
           html-body: file://out/email-body.html
