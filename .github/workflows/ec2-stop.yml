@@ -10,7 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (only show what would be stopped)"
+        description: "Dry run (only show what would be stopped / deleted)"
+        required: false
+        default: false
+        type: boolean
+      delete_target_groups:
+        description: "Also delete Target Groups associated with Load Balancers"
         required: false
         default: false
         type: boolean
@@ -23,8 +28,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Check AWS CLI version
-        run: aws --version
+      - name: Check tools
+        run: |
+          aws --version
+          yq --version
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -33,132 +40,243 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Debug Variables
+      - name: Debug
         run: |
-          echo "Pioneer ASG: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
-          echo "APIHub ASG ondemand: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
-          echo "APIHub ASG spot: ${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}"
-          echo "Istio ASG: ${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
           echo "Triggered by: ${{ github.event_name }}"
           echo "Dry run: ${{ github.event.inputs.dry_run }}"
+          echo "Delete Target Groups: ${{ github.event.inputs.delete_target_groups }}"
+          echo "Clusters config:"
+          cat ./ec2-scheduled/clusters.yaml
 
-      - name: Stop EC2 Instances with Tag Filtering
+      - name: Stop ASGs and delete Load Balancers
         env:
           DRY_RUN: ${{ github.event.inputs.dry_run || false }}
+          DELETE_TGS: ${{ github.event.inputs.delete_target_groups || false }}
           IS_SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
-          cd ./ec2-scheduled/stop
-          
-          # Define all ASGs in an array
-          ASG_NAMES=(
-            "${{ vars.TF_VAR_Pioneer_ASG_NAME }}"
-            "${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}"
-            "${{ vars.TF_VAR_APIHUB_SPOT_ASG_NAME }}"
-            "${{ vars.TF_VAR_ISTIO_SVT_ASG_NAME }}"
-          )
-          
-          # Set mode based on trigger
+          set -euo pipefail
+          cd ./ec2-scheduled
+
+          # ------------------------------------------------------------
+          # Mode
+          # ------------------------------------------------------------
           if [[ "$IS_SCHEDULED" == "true" ]]; then
-            echo "⏰ Scheduled run - stopping instances for real"
+            echo "⏰ Scheduled run - applying changes for real"
             CURRENT_MODE="real"
+            # На scheduled-запуске Target Groups по умолчанию НЕ удаляем
+            DELETE_TGS="false"
           elif [[ "$DRY_RUN" == "true" ]]; then
-            echo "🧪 MANUAL DRY RUN - Only showing current state, no changes applied"
+            echo "🧪 MANUAL DRY RUN - Only showing what would be done"
             CURRENT_MODE="dry"
           else
-            echo "🚀 MANUAL REAL RUN - Stopping instances"
+            echo "🚀 MANUAL REAL RUN - Applying changes"
             CURRENT_MODE="real"
           fi
-          
-          # Function to check if ASG should be stopped
+
+          echo "Delete Target Groups: $DELETE_TGS"
+
+          # ------------------------------------------------------------
+          # Helpers
+          # ------------------------------------------------------------
           should_stop_asg() {
             local asg_name=$1
-          
-            # Skip if ASG name is empty
+
             if [[ -z "$asg_name" ]]; then
               return 1
             fi
-          
-            # Get the autostop tag value
+
             TAG_VALUE=$(aws autoscaling describe-auto-scaling-groups \
               --auto-scaling-group-names "$asg_name" \
               --query "AutoScalingGroups[0].Tags[?Key=='autostop'].Value" \
-              --output text 2>/dev/null)
-          
-            # Case 1: No tag → stop
+              --output text 2>/dev/null || true)
+
             if [[ -z "$TAG_VALUE" ]]; then
-              echo "ℹ️ No autostop tag found → will stop"
-              return 0  # Stop
+              echo "  ℹ️  No autostop tag → will stop"
+              return 0
             fi
-          
-            # Case 2: Tag exists → stop only if value is 'true'
+
             if [[ "$TAG_VALUE" == "true" ]]; then
-              echo "ℹ️ autostop=true found → will stop"
-              return 0  # Stop
+              echo "  ℹ️  autostop=true → will stop"
+              return 0
             else
-              echo "⏸️ autostop=false found → will NOT stop"
-              return 1  # Skip
+              echo "  ⏸️  autostop=false → will NOT stop"
+              return 1
             fi
           }
-          
-          # Function to show ASG state
+
           show_asg_state() {
             local asg_name=$1
-            echo "----------------------------------------"
-            echo "ASG: $asg_name"
             aws autoscaling describe-auto-scaling-groups \
               --auto-scaling-group-names "$asg_name" \
-              --query 'AutoScalingGroups[0].{CurrentMin:MinSize, CurrentMax:MaxSize, CurrentDesired:DesiredCapacity, Instances:length(Instances)}' \
-              --output table 2>/dev/null || echo "⚠️ Failed to describe ASG"
+              --query 'AutoScalingGroups[0].{Min:MinSize, Max:MaxSize, Desired:DesiredCapacity, Instances:length(Instances)}' \
+              --output table 2>/dev/null || echo "  ⚠️  Failed to describe ASG"
           }
-          
-          # Process each ASG
-          for ASG in "${ASG_NAMES[@]}"; do
-            echo "----------------------------------------"
-            echo "Checking ASG: $ASG"
-          
-            # Skip empty ASG names
-            if [[ -z "$ASG" ]]; then
-              echo "⚠️ Skipping empty ASG name"
-              continue
-            fi
-          
-            # Check if ASG exists
-            if ! aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" --query 'AutoScalingGroups[0]' --output text >/dev/null 2>&1; then
-              echo "⚠️ ASG not found: $ASG"
-              continue
-            fi
-          
-            # Check if this ASG should be stopped
-            if should_stop_asg "$ASG"; then
-              # Show current state
-              show_asg_state "$ASG"
-          
-              # Stop the ASG if in real mode
-              if [[ "$CURRENT_MODE" == "real" ]]; then
-                echo "🛑 Stopping ASG: $ASG"
-                aws autoscaling update-auto-scaling-group \
-                  --auto-scaling-group-name "$ASG" \
-                  --min-size 0 --max-size 0 --desired-capacity 0
-          
-                if [ $? -eq 0 ]; then
-                  echo "✅ Successfully stopped $ASG"
+
+          # ------------------------------------------------------------
+          # 1. Process ASGs from clusters.yaml
+          # ------------------------------------------------------------
+          echo ""
+          echo "========================================"
+          echo "Processing Auto Scaling Groups..."
+          echo "========================================"
+
+          CLUSTER_COUNT=$(yq '.clusters | length' clusters.yaml)
+
+          for (( i=0; i<CLUSTER_COUNT; i++ )); do
+            CLUSTER_NAME=$(yq -r ".clusters[$i].name" clusters.yaml)
+            echo ""
+            echo "▶ Cluster: $CLUSTER_NAME"
+
+            ASG_COUNT=$(yq ".clusters[$i].asgs | length" clusters.yaml)
+
+            for (( j=0; j<ASG_COUNT; j++ )); do
+              ASG=$(yq -r ".clusters[$i].asgs[$j]" clusters.yaml)
+              echo "----------------------------------------"
+              echo "ASG: $ASG"
+
+              if [[ -z "$ASG" ]]; then
+                echo "  ⚠️  Empty ASG name, skipping"
+                continue
+              fi
+
+              if ! aws autoscaling describe-auto-scaling-groups \
+                    --auto-scaling-group-names "$ASG" \
+                    --query 'AutoScalingGroups[0]' \
+                    --output text >/dev/null 2>&1; then
+                echo "  ⚠️  ASG not found, skipping"
+                continue
+              fi
+
+              if should_stop_asg "$ASG"; then
+                show_asg_state "$ASG"
+
+                if [[ "$CURRENT_MODE" == "real" ]]; then
+                  echo "  🛑 Scaling ASG to 0..."
+                  if aws autoscaling update-auto-scaling-group \
+                       --auto-scaling-group-name "$ASG" \
+                       --min-size 0 --max-size 0 --desired-capacity 0; then
+                    echo "  ✅ Successfully stopped $ASG"
+                  else
+                    echo "  ❌ Failed to stop $ASG"
+                  fi
                 else
-                  echo "❌ Failed to stop $ASG"
+                  echo "  📋 Would scale to 0:"
+                  echo "     aws autoscaling update-auto-scaling-group \\"
+                  echo "       --auto-scaling-group-name $ASG \\"
+                  echo "       --min-size 0 --max-size 0 --desired-capacity 0"
                 fi
               else
-                echo "📋 Would stop: $ASG"
-                echo "   aws autoscaling update-auto-scaling-group \\"
-                echo "     --auto-scaling-group-name $ASG \\"
-                echo "     --min-size 0 --max-size 0 --desired-capacity 0"
+                echo "  ⏭️  Skipped"
               fi
-            else
-              echo "⏭️ Skipping ASG: $ASG (autostop=false)"
+            done
+          done
+
+          # ------------------------------------------------------------
+          # 2. Delete Load Balancers
+          # ------------------------------------------------------------
+          echo ""
+          echo "========================================"
+          echo "Cleaning up Load Balancers..."
+          echo "========================================"
+
+          for (( i=0; i<CLUSTER_COUNT; i++ )); do
+            CLUSTER_NAME=$(yq -r ".clusters[$i].name" clusters.yaml)
+            echo ""
+            echo "▶ Cluster: $CLUSTER_NAME"
+
+            mapfile -t ALL_LB_ARNS < <(aws elbv2 describe-load-balancers \
+              --query "LoadBalancers[].LoadBalancerArn" \
+              --output text 2>/dev/null | tr '\t' '\n' || true)
+
+            if [[ ${#ALL_LB_ARNS[@]} -eq 0 || -z "${ALL_LB_ARNS[0]:-}" ]]; then
+              echo "  No load balancers found in region"
+              continue
+            fi
+
+            found=0
+
+            for ARN in "${ALL_LB_ARNS[@]}"; do
+              [[ -z "$ARN" ]] && continue
+
+              TAG_VALUE=$(aws elbv2 describe-tags \
+                --resource-arns "$ARN" \
+                --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster'].Value | [0]" \
+                --output text 2>/dev/null || true)
+
+              if [[ "$TAG_VALUE" != "$CLUSTER_NAME" ]]; then
+                continue
+              fi
+
+              found=1
+
+              LB_NAME=$(aws elbv2 describe-load-balancers \
+                --load-balancer-arns "$ARN" \
+                --query "LoadBalancers[0].LoadBalancerName" \
+                --output text)
+
+              LB_TYPE=$(aws elbv2 describe-load-balancers \
+                --load-balancer-arns "$ARN" \
+                --query "LoadBalancers[0].Type" \
+                --output text)
+
+              PROTECTION=$(aws elbv2 describe-load-balancer-attributes \
+                --load-balancer-arn "$ARN" \
+                --query "Attributes[?Key=='deletion_protection.enabled'].Value | [0]" \
+                --output text 2>/dev/null || echo "false")
+
+              echo "  Found $LB_TYPE: $LB_NAME"
+              echo "  ARN: $ARN"
+              echo "  deletion_protection: $PROTECTION"
+
+              if [[ "$PROTECTION" == "true" ]]; then
+                echo "  ⚠️  deletion_protection is enabled → SKIPPING"
+                continue
+              fi
+
+              if [[ "$CURRENT_MODE" == "real" ]]; then
+                # Optionally delete Target Groups
+                if [[ "$DELETE_TGS" == "true" ]]; then
+                  mapfile -t TG_ARNS < <(aws elbv2 describe-target-groups \
+                    --load-balancer-arn "$ARN" \
+                    --query "TargetGroups[].TargetGroupArn" \
+                    --output text 2>/dev/null | tr '\t' '\n' || true)
+
+                  for TG in "${TG_ARNS[@]}"; do
+                    [[ -z "$TG" ]] && continue
+                    echo "    → Deleting Target Group: $TG"
+                    aws elbv2 delete-target-group --target-group-arn "$TG" 2>/dev/null || \
+                      echo "      ⚠️  Could not delete TG (possibly still in use)"
+                  done
+                else
+                  echo "    ℹ️  Skipping Target Groups deletion (delete_target_groups=false)"
+                fi
+
+                echo "    → Deleting Load Balancer..."
+                if aws elbv2 delete-load-balancer --load-balancer-arn "$ARN"; then
+                  echo "    ✅ Successfully deleted $LB_NAME"
+                else
+                  echo "    ❌ Failed to delete $LB_NAME"
+                fi
+              else
+                echo "  📋 Would delete $LB_TYPE: $LB_NAME"
+                if [[ "$DELETE_TGS" == "true" ]]; then
+                  echo "     (and its Target Groups)"
+                fi
+              fi
+            done
+
+            if [[ $found -eq 0 ]]; then
+              echo "  No LBs found with tag elbv2.k8s.aws/cluster=$CLUSTER_NAME"
             fi
           done
-          
+
+          # ------------------------------------------------------------
+          # Finish
+          # ------------------------------------------------------------
+          echo ""
           echo "----------------------------------------"
           if [[ "$CURRENT_MODE" == "dry" ]]; then
             echo "🧪 Dry run completed. No changes made."
-          elif [[ "$CURRENT_MODE" == "real" ]]; then
-            echo "✅ All eligible ASGs processed."
+          else
+            echo "✅ All eligible ASGs and Load Balancers processed."
           fi

@@ -1,0 +1,19 @@
+# Список кластеров и связанных с ними Auto Scaling Groups
+# При остановке:
+#   1. Все перечисленные ASG скейлятся в 0 (если autostop != false)
+#   2. Удаляются все Load Balancers с тегом elbv2.k8s.aws/cluster = <cluster_name>
+#      (только если deletion_protection выключен)
+
+clusters:
+  - name: Qubership-pioneer
+    asgs:
+      - eks-spot_group-2025030409420996310000001c-cacab044-5f11-b69a-a3e3-fac6e9c71eb9
+
+  - name: api-hub-demo
+    asgs:
+      - eks-ondemand-temp-stable-f4cbe31d-450b-2f01-a8c6-9379acd9f6f7
+      - eks-spot_group_api_hub-20250604014139692100000007-dccb9c4c-f044-5bc2-0329-ff1f6a8775e8
+
+  - name: Istio-SVT
+    asgs:
+      - eks-Istio-SVT-2025092410542161070000000f-b6ccbdae-14ea-b0bc-6eac-efea3c7b1451
