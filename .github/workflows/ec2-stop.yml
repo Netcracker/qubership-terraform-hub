@@ -23,10 +23,11 @@ on:
 jobs:
   stop-instances:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Check tools
         run: |
@@ -63,7 +64,7 @@ jobs:
           if [[ "$IS_SCHEDULED" == "true" ]]; then
             echo "⏰ Scheduled run - applying changes for real"
             CURRENT_MODE="real"
-            # На scheduled-запуске Target Groups по умолчанию НЕ удаляем
+            # On scheduled runs, Target Groups are not deleted by default
             DELETE_TGS="false"
           elif [[ "$DRY_RUN" == "true" ]]; then
             echo "🧪 MANUAL DRY RUN - Only showing what would be done"
