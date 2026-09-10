@@ -1,8 +1,4 @@
-# Список кластеров и связанных с ними Auto Scaling Groups
-# При остановке:
-#   1. Все перечисленные ASG скейлятся в 0 (если autostop != false)
-#   2. Удаляются все Load Balancers с тегом elbv2.k8s.aws/cluster = <cluster_name>
-#      (только если deletion_protection выключен)
+# List of clusters and their associated Auto Scaling Groups
 
 clusters:
   - name: Qubership-pioneer
