@@ -92,7 +92,7 @@ jobs:
           terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -out=tfplan
 
       - name: Upload Terraform plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
           path: kubernetes-terraform/tfplan
