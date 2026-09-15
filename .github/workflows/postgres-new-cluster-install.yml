@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Clone public pgskipper-operator repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
             repository: Netcracker/pgskipper-operator
             path: pgskipper-operator

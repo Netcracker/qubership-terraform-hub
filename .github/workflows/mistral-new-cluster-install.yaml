@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Clone public qubership-mistral-operator repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Netcracker/qubership-mistral-operator
           path: qubership-mistral
