@@ -343,7 +343,7 @@ jobs:
           fi
 
       - name: Send email notification
-        uses: netcracker/qubership-workflow-hub/actions/email-action@f4a2c6f57cfdd620676d0dc7321491b33d7c214b
+        uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e
         env:
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_USERNAME: ${{ vars.EMAIL_FROM }}
