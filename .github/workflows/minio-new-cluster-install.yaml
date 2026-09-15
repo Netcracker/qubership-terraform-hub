@@ -109,7 +109,7 @@ jobs:
           TF_VAR_secret_key: ${{ github.event.inputs.secret_key }}
 
       - name: Upload Terraform Plan
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ github.event.inputs.cluster_name }}
           path: tfplan
