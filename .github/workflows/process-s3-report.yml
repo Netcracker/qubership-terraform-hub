@@ -371,7 +371,7 @@ jobs:
             DevOps Team
 
       - name: Trigger Results Push to Git
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({

@@ -213,7 +213,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger PG install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -235,7 +235,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger Consul install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -257,7 +257,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger Zookeeper install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -279,7 +279,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger Kafka install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -301,7 +301,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger Rabbitmq install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -323,7 +323,7 @@ jobs:
           echo "JSON: ${{ toJSON(github.event.inputs) }}"
 
       - name: Trigger Cassandra install workflow
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
