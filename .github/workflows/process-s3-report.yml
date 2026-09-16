@@ -212,6 +212,9 @@ jobs:
 
       - name: Generate Allure Reports
         id: generate
+        env:
+          XML_FILES: ${{ steps.download.outputs.XML_FILES }}
+          JSON_FILES: ${{ steps.download.outputs.JSON_FILES }}
         run: |
           echo "Generating Allure reports from: $SOURCE_DIR for test type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
 
@@ -220,7 +223,7 @@ jobs:
           mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
 
           # Check if we have test files
-          if [ "${{ steps.download.outputs.XML_FILES }}" -gt 0 ] || [ "${{ steps.download.outputs.JSON_FILES }}" -gt 0 ]; then
+          if [ "${XML_FILES:-0}" -gt 0 ] || [ "${JSON_FILES:-0}" -gt 0 ]; then
             echo "Found test files, generating reports..."
             pwd
             echo "Debug contents of allure-results"
