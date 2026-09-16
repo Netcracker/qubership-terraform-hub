@@ -1,0 +1,121 @@
+name: Reusable - Install Helm Component
+
+on:
+  workflow_call:
+    inputs:
+      component_name:
+        description: "Display name used in step names (e.g. Consul)"
+        required: true
+        type: string
+      environment:
+        description: "GitHub environment to run against"
+        required: false
+        type: string
+        default: "dev"
+      kubectl_version:
+        description: "kubectl version to install, must match the target EKS cluster's Kubernetes version"
+        required: false
+        type: string
+        default: "v1.36.0"
+      chart_repo:
+        description: "Public chart repo to clone, e.g. Netcracker/qubership-consul"
+        required: true
+        type: string
+      chart_path:
+        description: "Path to the Helm chart, relative to the root of chart_repo, e.g. charts/helm/consul-service"
+        required: true
+        type: string
+      values_dir:
+        description: "Local directory (in this repo) containing the values file, e.g. ./consul"
+        required: true
+        type: string
+      values_file:
+        description: "Values file name inside values_dir, e.g. example-config.yaml"
+        required: true
+        type: string
+      release_name:
+        description: "Helm release name"
+        required: true
+        type: string
+      namespace_var:
+        description: "Name of the vars.* entry holding the target namespace, e.g. TF_VAR_CONSUL_INSTALL_NAMESPACE"
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+
+jobs:
+  install:
+    permissions:
+      contents: read
+    environment: "${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Clone public ${{ inputs.chart_repo }} repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ inputs.chart_repo }}
+
+      - name: Listing downloaded files
+        env:
+          CHART_REPO: ${{ inputs.chart_repo }}
+        run: |
+          pwd
+          ls -R "${CHART_REPO##*/}"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: ${{ inputs.kubectl_version }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Verify tools
+        run: |
+          kubectl version --client
+          helm version
+          aws --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure kubeconfig for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+        run: |
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Install ${{ inputs.component_name }}
+        env:
+          INSTALL_NAMESPACE: ${{ vars[inputs.namespace_var] }}
+          VALUES_DIR: ${{ inputs.values_dir }}
+          VALUES_FILE: ${{ inputs.values_file }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          CHART_REPO: ${{ inputs.chart_repo }}
+          CHART_PATH: ${{ inputs.chart_path }}
+        run: |
+          cd "$VALUES_DIR"
+          echo "Namespace to install: $INSTALL_NAMESPACE"
+          helm install --namespace="$INSTALL_NAMESPACE" --create-namespace \
+            -f "./$VALUES_FILE" \
+            "$RELEASE_NAME" \
+            "../${CHART_REPO##*/}/$CHART_PATH"
