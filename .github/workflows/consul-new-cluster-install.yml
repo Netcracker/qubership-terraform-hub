@@ -64,5 +64,5 @@ jobs:
       - name: Install Consul
         run: |
           cd ./consul
-          echo  "Namespace to install: ${{ vars.TF_VAR_CONSUL_INSTALL_NAMESPACE }}" 
+          echo  "Namespace to install: ${{ vars.TF_VAR_CONSUL_INSTALL_NAMESPACE }}"
           helm install --namespace=${{ vars.TF_VAR_CONSUL_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml consul-service ../qubership-consul/charts/helm/consul-service/

@@ -29,7 +29,7 @@ jobs:
       - name: Install requirements
         shell: bash
         id: download
-        run: |            
+        run: |
             sudo apt update -qqqy
             sudo apt install -qqqy openssh-server tmux
 
@@ -43,7 +43,7 @@ jobs:
           sudo systemctl enable ssh
           sudo ufw allow from ${GATEWAY_IP} to any port ${PORT}
           sudo ufw --force enable
-          if [ -z "$(find /etc/ssh/ -name 'ssh_host_*' -type f)" ]; then 
+          if [ -z "$(find /etc/ssh/ -name 'ssh_host_*' -type f)" ]; then
             DEBIAN_FRONTEND=noninteractive sudo -E dpkg-reconfigure openssh-server
           fi
           echo "PasswordAuthentication no" | sudo tee -a /etc/ssh/sshd_config
@@ -86,30 +86,30 @@ jobs:
         run: |
           echo "$GATEWAY_PRIVATE_KEY" > temp_key.pem
           chmod 400 temp_key.pem
-          
+
           # Create unblock script
           sudo tee /usr/local/bin/unblock > /dev/null << 'EOF'
           #!/bin/bash
           tmux kill-session
           EOF
           sudo chmod +x /usr/local/bin/unblock
-          
+
           # Create motd
           sudo tee /etc/motd > /dev/null << 'EOF'
-          A tmux session is running in the background, you can attach with 
+          A tmux session is running in the background, you can attach with
           "tmux attach". To stop this host, run "unblock" or "tmux kill-session".
           EOF
-    
+
           # Start tmux session
           tmux new-session -d -s debug
-          
+
           # Start reverse SSH tunnel in background
           ssh -o StrictHostKeyChecking=no -i temp_key.pem -R 2222:localhost:22 ${GATEWAY_USER}@${GATEWAY_IP} -p 2222 "sleep ${MAX_LIFE_TIME}" &
           SSH_PID=$!
-          
+
           # Wait for tmux session to be closed
           tmux wait-for channel
-          
+
           # Cleanup
           kill $SSH_PID 2>/dev/null || true
           rm -f temp_key.pem

@@ -64,5 +64,5 @@ jobs:
       - name: Install DBaaS
         run: |
           cd ./dbaas
-          echo  "Namespace to install: ${{ vars.TF_VAR_DBAAS_INSTALL_NAMESPACE }}" 
+          echo  "Namespace to install: ${{ vars.TF_VAR_DBAAS_INSTALL_NAMESPACE }}"
           helm install dbaas ./helm-templates/dbaas-aggregator --namespace=${{ vars.TF_VAR_DBAAS_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml
