@@ -7,7 +7,7 @@
 # https://github.com/Netcracker/.github/blob/main/config/examples/auto-labeler-config.yaml
 
 name: Automatic PR Labeler
-run-name: PR #${{ github.event.pull_request.number }} - Automatic Labeler
+run-name: "PR #${{ github.event.pull_request.number }} - Automatic Labeler"
 on:
   pull_request:
     branches: [main]

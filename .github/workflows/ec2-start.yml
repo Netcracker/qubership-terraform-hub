@@ -22,9 +22,9 @@ jobs:
   terraform:
     permissions:
       contents: read
-    if: false #Disable job
+    if: false # Disable job
     runs-on: ubuntu-latest
-    #environment: ${{ github.event.inputs.environment || 'dev' }}
+    # environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout Code

@@ -1,8 +1,8 @@
 name: Sync results from S3 to Git
 
 on:
-  workflow_call:
-  workflow_dispatch:
+  workflow_call: {}
+  workflow_dispatch: {}
 
 env:
   S3_BUCKET: qstp-results
