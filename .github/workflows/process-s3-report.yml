@@ -24,10 +24,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -58,7 +58,7 @@ jobs:
           echo "TEST_TYPE=$TEST_TYPE" >> $GITHUB_OUTPUT
           
           # Extract timestamp path (everything after Result/[test-type]/)
-          TIMESTAMP_PATH=$(echo "$S3_DIR" | sed "s|^Result/$TEST_TYPE/||")
+          TIMESTAMP_PATH=${S3_DIR#Result/"$TEST_TYPE"/}
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
           
           # Create safe identifier
@@ -117,11 +117,13 @@ jobs:
           
           if [ -z "$JSON_FILES" ]; then
             echo "No JSON files found"
-            echo "PASS_RATE=No data" >> $GITHUB_OUTPUT
-            echo "TOTAL_TESTS=0" >> $GITHUB_OUTPUT
-            echo "PASSED_TESTS=0" >> $GITHUB_OUTPUT
-            echo "SKIPPED_TESTS=0" >> $GITHUB_OUTPUT
-            echo "UNKNOWN_TESTS=0" >> $GITHUB_OUTPUT
+            {
+              echo "PASS_RATE=No data"
+              echo "TOTAL_TESTS=0"
+              echo "PASSED_TESTS=0"
+              echo "SKIPPED_TESTS=0"
+              echo "UNKNOWN_TESTS=0"
+            } >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -171,16 +173,18 @@ jobs:
           EXECUTED=$((TOTAL - EXCLUDED))
           
           if [ $EXECUTED -gt 0 ]; then
-            PASS_RATE=$(echo "scale=2; $PASSED * 100 / $EXECUTED" | bc)
-            echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_OUTPUT
+            PASS_RATE="$(echo "scale=2; $PASSED * 100 / $EXECUTED" | bc)%"
           else
-            echo "PASS_RATE=No tests executed" >> $GITHUB_OUTPUT
+            PASS_RATE="No tests executed"
           fi
-          
-          echo "TOTAL_TESTS=$TOTAL" >> $GITHUB_OUTPUT
-          echo "PASSED_TESTS=$PASSED" >> $GITHUB_OUTPUT
-          echo "SKIPPED_TESTS=$SKIPPED" >> $GITHUB_OUTPUT
-          echo "UNKNOWN_TESTS=$UNKNOWN" >> $GITHUB_OUTPUT
+
+          {
+            echo "PASS_RATE=${PASS_RATE}"
+            echo "TOTAL_TESTS=$TOTAL"
+            echo "PASSED_TESTS=$PASSED"
+            echo "SKIPPED_TESTS=$SKIPPED"
+            echo "UNKNOWN_TESTS=$UNKNOWN"
+          } >> $GITHUB_OUTPUT
           
           echo "📊 Test Summary: Total=$TOTAL, Passed=$PASSED, Skipped=$SKIPPED, Unknown=$UNKNOWN, Executed=$EXECUTED, Rate=${PASS_RATE}%"
 
@@ -211,7 +215,7 @@ jobs:
           mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
           
           # Check if we have test files
-          if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
+          if [ "${{ steps.download.outputs.XML_FILES }}" -gt 0 ] || [ "${{ steps.download.outputs.JSON_FILES }}" -gt 0 ]; then
             echo "Found test files, generating reports..."
             pwd
             echo "Debug contents of allure-results"
@@ -343,7 +347,7 @@ jobs:
           fi
 
       - name: Send email notification
-        uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e
+        uses: netcracker/qubership-workflow-hub/actions/email-action@288a6a0d9a78e80dfdefccab1be6497a39deb746 # v2.8.0
         env:
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_USERNAME: ${{ vars.EMAIL_FROM }}
@@ -371,7 +375,7 @@ jobs:
             DevOps Team
 
       - name: Trigger Results Push to Git
-        uses: actions/github-script@v6
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({

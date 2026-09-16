@@ -20,4 +20,4 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: webiny/action-conventional-commits@v1.4.2
+      - uses: webiny/action-conventional-commits@d13e2e7762992979ec06e9b5b7c7d24af1d7d7fd # v1.4.2
