@@ -47,13 +47,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
-        run: |
-          echo "Deploying to: ${{ github.event.inputs.environment }}"
-          echo "tf-prepare: ${{ github.event.inputs.tf-prepare }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
-          echo "EKS cluster name: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}"
         env:
           ENV_VAR: ${{ vars.ENV_VAR }}
+          DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment }}
+          TF_PREPARE_INPUT: ${{ github.event.inputs.tf-prepare }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+        run: |
+          echo "Deploying to: $DEPLOY_ENVIRONMENT"
+          echo "tf-prepare: $TF_PREPARE_INPUT"
+          echo "JSON: $INPUTS_JSON"
+          echo "EKS cluster name: $EKS_CLUSTER_NAME"
   tf-prepare:
     permissions:
       contents: read
@@ -87,15 +91,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform Init and Plan
+        env:
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
           cd ./kubernetes-terraform
           terraform init
-          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
-          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          if ! terraform workspace list | grep -q "$EKS_CLUSTER_NAME"; then
+          terraform workspace new "$EKS_CLUSTER_NAME"
           echo "Create new env for TF state"
           fi
-          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform plan -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -out=tfplan
+          terraform workspace select "$EKS_CLUSTER_NAME"
+          terraform plan -var "EKS_NEW_CLUSTERNAME=$EKS_CLUSTER_NAME" -out=tfplan
 
       - name: Upload Terraform plan
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -136,14 +142,16 @@ jobs:
           path: kubernetes-terraform
 
       - name: Terraform Apply
+        env:
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
           cd ./kubernetes-terraform
           terraform init
-          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
-          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          if ! terraform workspace list | grep -q "$EKS_CLUSTER_NAME"; then
+          terraform workspace new "$EKS_CLUSTER_NAME"
           echo "Create new env for TF state"
           fi
-          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          terraform workspace select "$EKS_CLUSTER_NAME"
           terraform apply -auto-approve tfplan
 
   tf-post-install:
@@ -171,18 +179,23 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Configure kubeconfig for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Terraform Post Install
+        env:
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
           cd ./kubernetes-terraform/post-configuration/
           terraform init
-          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
-          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          if ! terraform workspace list | grep -q "$EKS_CLUSTER_NAME"; then
+          terraform workspace new "$EKS_CLUSTER_NAME"
           fi
-          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform workspace select "$EKS_CLUSTER_NAME"
+          terraform apply -var "EKS_NEW_CLUSTERNAME=$EKS_CLUSTER_NAME" -auto-approve
 
   tf-destroy:
     permissions:
@@ -209,15 +222,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform Destroy
+        env:
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
           cd ./kubernetes-terraform
           terraform init
-          if ! terraform workspace list | grep -q ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}; then
-          terraform workspace new ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          if ! terraform workspace list | grep -q "$EKS_CLUSTER_NAME"; then
+          terraform workspace new "$EKS_CLUSTER_NAME"
           echo "Create new env for TF state"
           fi
-          terraform workspace select ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-          terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
+          terraform workspace select "$EKS_CLUSTER_NAME"
+          terraform destroy -var "EKS_NEW_CLUSTERNAME=$EKS_CLUSTER_NAME" -auto-approve
 
   pg-install:
     permissions:
@@ -228,9 +243,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          PG_INSTALL_INPUT: ${{ github.event.inputs.pg-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.pg-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $PG_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger PG install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -252,9 +270,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          CONSUL_INSTALL_INPUT: ${{ github.event.inputs.consul-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.consul-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $CONSUL_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger Consul install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -276,9 +297,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          ZOOKEEPER_INSTALL_INPUT: ${{ github.event.inputs.zookeeper-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.zookeeper-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $ZOOKEEPER_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger Zookeeper install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -300,9 +324,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          KAFKA_INSTALL_INPUT: ${{ github.event.inputs.kafka-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.kafka-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $KAFKA_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger Kafka install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -324,9 +351,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          RABBITMQ_INSTALL_INPUT: ${{ github.event.inputs.rabbitmq-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.rabbitmq-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $RABBITMQ_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger Rabbitmq install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -348,9 +378,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show inputs
+        env:
+          CASSANDRA_INSTALL_INPUT: ${{ github.event.inputs.cassandra-install }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
         run: |
-          echo "tf-prepare: ${{ github.event.inputs.cassandra-install }}"
-          echo "JSON: ${{ toJSON(github.event.inputs) }}"
+          echo "tf-prepare: $CASSANDRA_INSTALL_INPUT"
+          echo "JSON: $INPUTS_JSON"
 
       - name: Trigger Cassandra install workflow
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0

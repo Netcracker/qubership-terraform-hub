@@ -55,14 +55,19 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Configure kubeconfig for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Verify cluster access
         run: kubectl get nodes
 
       - name: Install Monitoring
+        env:
+          MONITORING_INSTALL_NAMESPACE: ${{ vars.TF_VAR_MONITORING_INSTALL_NAMESPACE }}
         run: |
           cd ./monitoring
-          echo  "Namespace to install: ${{ vars.TF_VAR_MONITORING_INSTALL_NAMESPACE }}" 
-          helm install monitoring-operator ./charts/qubership-monitoring-operator --namespace=${{ vars.TF_VAR_MONITORING_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml
+          echo "Namespace to install: $MONITORING_INSTALL_NAMESPACE"
+          helm install monitoring-operator ./charts/qubership-monitoring-operator --namespace="$MONITORING_INSTALL_NAMESPACE" --create-namespace -f ./example-config.yaml

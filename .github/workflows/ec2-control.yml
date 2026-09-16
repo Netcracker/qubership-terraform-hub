@@ -46,38 +46,51 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Validate action input
+        env:
+          EC2_ACTION: ${{ inputs.action }}
         run: |
-          if [ "${{ inputs.action }}" != "start" ] && [ "${{ inputs.action }}" != "stop" ]; then
+          if [ "$EC2_ACTION" != "start" ] && [ "$EC2_ACTION" != "stop" ]; then
             echo "Error: Action must be either 'start' or 'stop'"
             exit 1
           fi
 
       - name: ${{ inputs.action }} EC2 instance
+        env:
+          EC2_ACTION: ${{ inputs.action }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          AWS_REGION: ${{ inputs.aws_region }}
         run: |
-          if [ "${{ inputs.action }}" == "start" ]; then
-            echo "Starting instance ${{ inputs.instance_id }}"
-            aws ec2 start-instances --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+          if [ "$EC2_ACTION" == "start" ]; then
+            echo "Starting instance $INSTANCE_ID"
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
           else
-            echo "Stopping instance ${{ inputs.instance_id }}"
-            aws ec2 stop-instances --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+            echo "Stopping instance $INSTANCE_ID"
+            aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
           fi
 
       - name: Wait for instance to reach desired state
+        env:
+          EC2_ACTION: ${{ inputs.action }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          AWS_REGION: ${{ inputs.aws_region }}
         run: |
-          if [ "${{ inputs.action }}" == "start" ]; then
+          if [ "$EC2_ACTION" == "start" ]; then
             echo "Waiting for instance to start..."
-            aws ec2 wait instance-running --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
             echo "Instance is now running"
           else
             echo "Waiting for instance to stop..."
-            aws ec2 wait instance-stopped --instance-ids ${{ inputs.instance_id }} --region ${{ inputs.aws_region }}
+            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
             echo "Instance is now stopped"
           fi
 
       - name: Get instance status
+        env:
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          AWS_REGION: ${{ inputs.aws_region }}
         run: |
           aws ec2 describe-instances \
-            --instance-ids ${{ inputs.instance_id }} \
-            --region ${{ inputs.aws_region }} \
+            --instance-ids "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
             --query "Reservations[0].Instances[0].State.Name" \
             --output text

@@ -40,13 +40,17 @@ jobs:
 
       - name: Parse S3 path
         id: parse_path
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          S3_DIRECTORY_INPUT: ${{ github.event.inputs.s3_directory }}
+          CLIENT_PAYLOAD_DIRECTORY: ${{ github.event.client_payload.directory }}
         run: |
           # Parse S3 directory from input
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            S3_DIR="${{ github.event.inputs.s3_directory }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            S3_DIR="$S3_DIRECTORY_INPUT"
             echo "Using manual input: $S3_DIR"
-          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            S3_DIR="${{ github.event.client_payload.directory }}"
+          elif [ "$EVENT_NAME" == "repository_dispatch" ]; then
+            S3_DIR="$CLIENT_PAYLOAD_DIRECTORY"
             echo "Using repository dispatch: $S3_DIR"
           else
             echo "Unknown trigger"
@@ -75,17 +79,19 @@ jobs:
 
       - name: Download Allure results from S3
         id: download
+        env:
+          PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
         run: |
-          echo "Downloading from: s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/"
+          echo "Downloading from: s3://$S3_BUCKET/$PARSED_S3_DIR/"
           mkdir -p $SOURCE_DIR
 
           # First, check what's in S3
           echo "Listing S3 contents:"
-          aws s3 ls "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" --recursive || true
+          aws s3 ls "s3://$S3_BUCKET/$PARSED_S3_DIR/" --recursive || true
 
           # Download ALL files from the S3 directory (including subdirectories)
           echo "Downloading files..."
-          aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+          aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
 
           # Check what was downloaded
           echo "Downloaded files:"
@@ -101,7 +107,7 @@ jobs:
           # If no files, try downloading everything
           if [ $XML_COUNT -eq 0 ] && [ $JSON_COUNT -eq 0 ]; then
             echo "No XML/JSON files found with filters, downloading everything..."
-            aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/
+            aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/
 
             XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
             JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
@@ -215,8 +221,9 @@ jobs:
         env:
           XML_FILES: ${{ steps.download.outputs.XML_FILES }}
           JSON_FILES: ${{ steps.download.outputs.JSON_FILES }}
+          PARSED_TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
         run: |
-          echo "Generating Allure reports from: $SOURCE_DIR for test type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
+          echo "Generating Allure reports from: $SOURCE_DIR for test type: $PARSED_TEST_TYPE"
 
           # Clean previous reports
           rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
@@ -266,9 +273,11 @@ jobs:
 
       - name: Upload Reports to S3
         if: steps.generate.outputs.REPORT_GENERATED == 'true'
+        env:
+          TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
+          TIMESTAMP_PATH: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
+          PARSED_SAFE_ID: ${{ steps.parse_path.outputs.SAFE_ID }}
         run: |
-          TEST_TYPE="${{ steps.parse_path.outputs.TEST_TYPE }}"
-          TIMESTAMP_PATH="${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
           REPORT_BASE_PATH="Report/$TEST_TYPE/$TIMESTAMP_PATH"
 
           echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
@@ -287,7 +296,7 @@ jobs:
           # Upload single-file report
           SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
           if [ -n "$SINGLE_FILE" ]; then
-            SINGLE_NAME="allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
+            SINGLE_NAME="allure-report-${PARSED_SAFE_ID}.html"
             echo "Uploading single-file as: $SINGLE_NAME"
 
             # Copy and rename
@@ -315,34 +324,41 @@ jobs:
           #retention-days: 7
 
       - name: Output Results
+        env:
+          PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
+          PARSED_TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
+          PARSED_TIMESTAMP_PATH: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
+          DOWNLOADED_XML_FILES: ${{ steps.download.outputs.XML_FILES }}
+          DOWNLOADED_JSON_FILES: ${{ steps.download.outputs.JSON_FILES }}
+          REPORT_GENERATED: ${{ steps.generate.outputs.REPORT_GENERATED }}
         run: |
           echo ""
           echo "========================================"
           echo "RESULTS SUMMARY"
           echo "========================================"
           echo ""
-          echo "Source: ${{ steps.parse_path.outputs.S3_DIR }}"
-          echo "Test Type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
-          echo "Timestamp: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
-          echo "Test files: ${{ steps.download.outputs.XML_FILES }} XML, ${{ steps.download.outputs.JSON_FILES }} JSON"
+          echo "Source: $PARSED_S3_DIR"
+          echo "Test Type: $PARSED_TEST_TYPE"
+          echo "Timestamp: $PARSED_TIMESTAMP_PATH"
+          echo "Test files: $DOWNLOADED_XML_FILES XML, $DOWNLOADED_JSON_FILES JSON"
           echo ""
 
-          if [ "${{ steps.generate.outputs.REPORT_GENERATED }}" = "true" ]; then
+          if [ "$REPORT_GENERATED" = "true" ]; then
             echo "✅ REPORTS GENERATED"
             echo ""
 
-            if [ -n "${{ env.MULTI_URL }}" ]; then
+            if [ -n "$MULTI_URL" ]; then
               echo "📊 Multi-file report:"
-              echo "   ${{ env.MULTI_URL }}"
+              echo "   $MULTI_URL"
             fi
 
-            if [ -n "${{ env.SINGLE_URL }}" ]; then
+            if [ -n "$SINGLE_URL" ]; then
               echo ""
               echo "📥 Single-file report:"
-              echo "   ${{ env.SINGLE_URL }}"
+              echo "   $SINGLE_URL"
               echo ""
               echo "Download command:"
-              echo "curl -LO '${{ env.SINGLE_URL }}'"
+              echo "curl -LO '$SINGLE_URL'"
             fi
           else
             echo "❌ REPORTS FAILED"

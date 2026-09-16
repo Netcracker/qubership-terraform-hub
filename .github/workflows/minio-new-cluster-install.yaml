@@ -68,9 +68,11 @@ jobs:
           terraform workspace new $TF_WORKSPACE || terraform workspace select $TF_WORKSPACE
 
       - name: Set up outputs
+        env:
+          CLUSTER_NAME: ${{ github.event.inputs.cluster_name }}
         run: |
           echo "Workspace: $TF_WORKSPACE"
-          echo "Cluster name: ${{ github.event.inputs.cluster_name }}"
+          echo "Cluster name: $CLUSTER_NAME"
 
   plan:
     permissions:
@@ -96,25 +98,35 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
       - name: Select Terraform workspace
-        run: terraform workspace select ${{ needs.setup.outputs.workspace }}
+        env:
+          TF_TARGET_WORKSPACE: ${{ needs.setup.outputs.workspace }}
+        run: terraform workspace select "$TF_TARGET_WORKSPACE"
 
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Plan
-        run: |
-          terraform plan \
-            -var="cluster_name=${{ github.event.inputs.cluster_name }}" \
-            -var="base_url=${{ github.event.inputs.base_url }}" \
-            -var="access_key=${{ github.event.inputs.access_key }}" \
-            -var="secret_key=${{ github.event.inputs.secret_key }}" \
-            -var="region=${{ github.event.inputs.region }}" \
-            -var="drive_count=${{ github.event.inputs.drive_count }}" \
-            -var="storage_class=${{ github.event.inputs.storage_class }}" \
-            -var="tags=${{ github.event.inputs.tags }}" \
-            -out=tfplan
         env:
           TF_VAR_secret_key: ${{ github.event.inputs.secret_key }}
+          CLUSTER_NAME: ${{ github.event.inputs.cluster_name }}
+          BASE_URL: ${{ github.event.inputs.base_url }}
+          ACCESS_KEY: ${{ github.event.inputs.access_key }}
+          SECRET_KEY: ${{ github.event.inputs.secret_key }}
+          MINIO_REGION: ${{ github.event.inputs.region }}
+          DRIVE_COUNT: ${{ github.event.inputs.drive_count }}
+          STORAGE_CLASS: ${{ github.event.inputs.storage_class }}
+          RESOURCE_TAGS: ${{ github.event.inputs.tags }}
+        run: |
+          terraform plan \
+            -var="cluster_name=$CLUSTER_NAME" \
+            -var="base_url=$BASE_URL" \
+            -var="access_key=$ACCESS_KEY" \
+            -var="secret_key=$SECRET_KEY" \
+            -var="region=$MINIO_REGION" \
+            -var="drive_count=$DRIVE_COUNT" \
+            -var="storage_class=$STORAGE_CLASS" \
+            -var="tags=$RESOURCE_TAGS" \
+            -out=tfplan
 
       - name: Upload Terraform Plan
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -152,7 +164,9 @@ jobs:
           name: tfplan-${{ github.event.inputs.cluster_name }}
 
       - name: Select Terraform workspace
-        run: terraform workspace select ${{ needs.setup.outputs.workspace }}
+        env:
+          TF_TARGET_WORKSPACE: ${{ needs.setup.outputs.workspace }}
+        run: terraform workspace select "$TF_TARGET_WORKSPACE"
 
       - name: Terraform Init
         run: terraform init
@@ -169,18 +183,25 @@ jobs:
           echo "console_endpoint=$CONSOLE_ENDPOINT" >> $GITHUB_OUTPUT
 
       - name: Create deployment summary
+        env:
+          CLUSTER_NAME: ${{ github.event.inputs.cluster_name }}
+          MINIO_ENDPOINT: ${{ steps.endpoints.outputs.minio_endpoint }}
+          CONSOLE_ENDPOINT: ${{ steps.endpoints.outputs.console_endpoint }}
+          ACCESS_KEY: ${{ github.event.inputs.access_key }}
+          MINIO_REGION: ${{ github.event.inputs.region }}
+          STORAGE_CLASS: ${{ github.event.inputs.storage_class }}
         run: |
           {
             echo "## Minio Cluster Deployment Complete"
             echo ""
-            echo "**Cluster Name:** ${{ github.event.inputs.cluster_name }}"
+            echo "**Cluster Name:** $CLUSTER_NAME"
             echo ""
             echo "**Access Information:**"
-            echo "- Minio Endpoint: ${{ steps.endpoints.outputs.minio_endpoint }}"
-            echo "- Console Endpoint: ${{ steps.endpoints.outputs.console_endpoint }}"
-            echo "- Access Key: ${{ github.event.inputs.access_key }}"
-            echo "- Region: ${{ github.event.inputs.region }}"
-            echo "- Storage Class: ${{ github.event.inputs.storage_class }}"
+            echo "- Minio Endpoint: $MINIO_ENDPOINT"
+            echo "- Console Endpoint: $CONSOLE_ENDPOINT"
+            echo "- Access Key: $ACCESS_KEY"
+            echo "- Region: $MINIO_REGION"
+            echo "- Storage Class: $STORAGE_CLASS"
           } >> $GITHUB_STEP_SUMMARY
 
   notify:
@@ -191,8 +212,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send notification
+        env:
+          APPLY_RESULT: ${{ needs.apply.result }}
         run: |
-          if [ "${{ needs.apply.result }}" == "success" ]; then
+          if [ "$APPLY_RESULT" == "success" ]; then
             echo "Minio cluster deployment successful"
           else
             echo "Minio cluster deployment failed"

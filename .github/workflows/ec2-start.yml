@@ -45,10 +45,15 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform Init and Plan
+        env:
+          PIONEER_ASG_NAME: ${{ vars.TF_VAR_Pioneer_ASG_NAME }}
+          APIHUB_ONDEMAND_ASG_NAME: ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }}
+          GITHUB_RUNNER_ID: ${{ vars.TF_VAR_GITHUB_RUNNER_ID }}
+          OPENSEARCH_RUNNER_ID: ${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}
         run: |
           cd ./ec2-scheduled/start
-          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_Pioneer_ASG_NAME }} --min-size 8 --max-size 9 --desired-capacity 8
-          aws autoscaling update-auto-scaling-group --auto-scaling-group-name ${{ vars.TF_VAR_APIHUB_ONDEMAND_ASG_NAME }} --min-size 3 --max-size 4 --desired-capacity 3
+          aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$PIONEER_ASG_NAME" --min-size 8 --max-size 9 --desired-capacity 8
+          aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$APIHUB_ONDEMAND_ASG_NAME" --min-size 3 --max-size 4 --desired-capacity 3
           terraform init
-          terraform plan -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}"
-          terraform apply -var "GITHUB_RUNNER_ID=${{ vars.TF_VAR_GITHUB_RUNNER_ID }}" -var "OPENSEARCH_RUNNER_ID=${{ vars.TF_VAR_OPENSEARCH_RUNNER_ID }}" -auto-approve
+          terraform plan -var "GITHUB_RUNNER_ID=$GITHUB_RUNNER_ID" -var "OPENSEARCH_RUNNER_ID=$OPENSEARCH_RUNNER_ID"
+          terraform apply -var "GITHUB_RUNNER_ID=$GITHUB_RUNNER_ID" -var "OPENSEARCH_RUNNER_ID=$OPENSEARCH_RUNNER_ID" -auto-approve

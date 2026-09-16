@@ -55,14 +55,19 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Configure kubeconfig for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Verify cluster access
         run: kubectl get nodes
 
       - name: Install Opensearch
+        env:
+          OPENSEARCH_INSTALL_NAMESPACE: ${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }}
         run: |
           cd ./opensearch
-          echo  "Namespace to install: ${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }}" 
-          helm install --namespace=${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }} --create-namespace -f ./example-config.yaml opensearch ../qubership-opensearch/
+          echo "Namespace to install: $OPENSEARCH_INSTALL_NAMESPACE"
+          helm install --namespace="$OPENSEARCH_INSTALL_NAMESPACE" --create-namespace -f ./example-config.yaml opensearch ../qubership-opensearch/

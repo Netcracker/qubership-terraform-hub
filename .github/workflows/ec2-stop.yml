@@ -44,10 +44,14 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Debug
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          DELETE_TARGET_GROUPS_INPUT: ${{ github.event.inputs.delete_target_groups }}
         run: |
-          echo "Triggered by: ${{ github.event_name }}"
-          echo "Dry run: ${{ github.event.inputs.dry_run }}"
-          echo "Delete Target Groups: ${{ github.event.inputs.delete_target_groups }}"
+          echo "Triggered by: $EVENT_NAME"
+          echo "Dry run: $DRY_RUN_INPUT"
+          echo "Delete Target Groups: $DELETE_TARGET_GROUPS_INPUT"
           echo "Clusters config:"
           cat ./ec2-scheduled/clusters.yaml
 

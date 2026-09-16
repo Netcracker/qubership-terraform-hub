@@ -53,12 +53,15 @@ jobs:
 
       - name: Generate temporary runner token
         id: generate-token
+        env:
+          GITHUB_REPOSITORY_SLUG: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # For repository-level runner
           TOKEN=$(curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY_SLUG}/actions/runners/registration-token" \
             | jq -r .token)
 
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
@@ -72,11 +75,13 @@ jobs:
         env:
           GITHUB_RUNNER_TOKEN: ${{ steps.generate-token.outputs.token }}
           RUNNER_INSTANCE_TYPE: ${{ github.event.inputs.instance_type }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
         run: |
           terraform plan \
             -var="github_token=${GITHUB_RUNNER_TOKEN}" \
-            -var="github_org=${{ github.repository_owner }}" \
-            -var="github_repo=${{ github.event.repository.name }}" \
+            -var="github_org=${GITHUB_ORG}" \
+            -var="github_repo=${GITHUB_REPO_NAME}" \
             -var="instance_type=${RUNNER_INSTANCE_TYPE}" \
             -out=tfplan
         working-directory: ./spawn-github-runner
@@ -100,14 +105,17 @@ jobs:
         working-directory: ./spawn-github-runner
 
       - name: Wait for runner registration
+        env:
+          RUNNER_NAME: ${{ steps.runner-info.outputs.runner_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_SLUG: ${{ github.repository }}
         run: |
           echo "Waiting for runner to register..."
           sleep 60
 
           # Check if runner is online
-          RUNNER_NAME="${{ steps.runner-info.outputs.runner_name }}"
-          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runners")
+          RESPONSE=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY_SLUG}/actions/runners")
 
           ONLINE=$(echo "$RESPONSE" | jq -r ".runners[] | select(.name == \"$RUNNER_NAME\") | .status")
 
@@ -119,14 +127,19 @@ jobs:
           fi
 
       - name: Update deployment summary
+        env:
+          RUNNER_INSTANCE_ID: ${{ steps.runner-info.outputs.instance_id }}
+          RUNNER_PUBLIC_IP: ${{ steps.runner-info.outputs.public_ip }}
+          RUNNER_NAME: ${{ steps.runner-info.outputs.runner_name }}
+          RUNNER_LABELS: ${{ github.event.inputs.runner_labels }}
         run: |
           {
             echo "## 🚀 GitHub Runner Deployment Complete"
             echo ""
-            echo "**Instance ID:** ${{ steps.runner-info.outputs.instance_id }}"
-            echo "**Public IP:** ${{ steps.runner-info.outputs.public_ip }}"
-            echo "**Runner Name:** ${{ steps.runner-info.outputs.runner_name }}"
-            echo "**Labels:** ${{ github.event.inputs.runner_labels }}"
+            echo "**Instance ID:** $RUNNER_INSTANCE_ID"
+            echo "**Public IP:** $RUNNER_PUBLIC_IP"
+            echo "**Runner Name:** $RUNNER_NAME"
+            echo "**Labels:** $RUNNER_LABELS"
             echo ""
           } >> $GITHUB_STEP_SUMMARY
           echo "The runner should appear in your repository settings shortly."
@@ -160,11 +173,14 @@ jobs:
 
 
       - name: Terraform Destroy
+        env:
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
         run: |
           terraform destroy -auto-approve \
             -var="github_token=dummy-token" \
-            -var="github_org=${{ github.repository_owner }}" \
-            -var="github_repo=${{ github.event.repository.name }}"
+            -var="github_org=${GITHUB_ORG}" \
+            -var="github_repo=${GITHUB_REPO_NAME}"
         working-directory: ./spawn-github-runner
 
 
