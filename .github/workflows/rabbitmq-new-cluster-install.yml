@@ -10,18 +10,23 @@ on:
 
 jobs:
   Install-Rabbit-MQ:
+    permissions:
+      contents: read
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Clone public Rabbit-MQ repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-            repository: Netcracker/qubership-rabbitmq
-            path: qubership-rabbitmq
+          persist-credentials: false
+          repository: Netcracker/qubership-rabbitmq
+          path: qubership-rabbitmq
 
       - name: Listing downloaded files
         run: |

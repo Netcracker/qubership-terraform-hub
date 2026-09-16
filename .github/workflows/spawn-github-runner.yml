@@ -27,13 +27,17 @@ on:
 
 jobs:
   deploy-runner:
+    permissions:
+      contents: read
     name: Deploy GitHub Runner
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && !github.event.inputs.destroy_runner
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.destroy_runner != 'true'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -65,14 +69,16 @@ jobs:
         working-directory: ./spawn-github-runner
 
       - name: Terraform Plan
+        env:
+          GITHUB_RUNNER_TOKEN: ${{ steps.generate-token.outputs.token }}
+          RUNNER_INSTANCE_TYPE: ${{ github.event.inputs.instance_type }}
         run: |
           terraform plan \
-            -var="github_token=${{ steps.generate-token.outputs.token }}" \
+            -var="github_token=${GITHUB_RUNNER_TOKEN}" \
             -var="github_org=${{ github.repository_owner }}" \
             -var="github_repo=${{ github.event.repository.name }}" \
-            -var="instance_type=${{ github.event.inputs.instance_type }}" \
+            -var="instance_type=${RUNNER_INSTANCE_TYPE}" \
             -out=tfplan
-            
         working-directory: ./spawn-github-runner
 
       - name: Terraform Apply
@@ -126,13 +132,17 @@ jobs:
           echo "The runner should appear in your repository settings shortly."
 
   destroy-runner:
+    permissions:
+      contents: read
     name: Destroy GitHub Runner
     runs-on: ubuntu-latest
-    if: github.event.inputs.destroy_runner
+    if: github.event.inputs.destroy_runner == 'true'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -167,6 +177,8 @@ jobs:
           } >> $GITHUB_STEP_SUMMARY
 
   cleanup-old-runners:
+    permissions:
+      actions: write
     name: Cleanup Old Runners
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'

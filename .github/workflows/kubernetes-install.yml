@@ -41,6 +41,8 @@ on:
 
 jobs:
   running-inputs:
+    permissions:
+      contents: read
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +55,8 @@ jobs:
         env:
           ENV_VAR: ${{ vars.ENV_VAR }}
   tf-prepare:
+    permissions:
+      contents: read
     needs: running-inputs
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.tf-prepare == 'true'
@@ -60,6 +64,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -99,6 +105,8 @@ jobs:
           retention-days: 1
 
   tf-apply:
+    permissions:
+      contents: read
     needs: [running-inputs, tf-prepare]
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.tf-apply == 'true'
@@ -106,6 +114,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -137,12 +147,16 @@ jobs:
           terraform apply -auto-approve tfplan
 
   tf-post-install:
+    permissions:
+      contents: read
     needs: tf-apply
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -171,12 +185,16 @@ jobs:
           terraform apply -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   tf-destroy:
+    permissions:
+      contents: read
     if: github.event.inputs.tf-destroy == 'true'
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -202,6 +220,8 @@ jobs:
           terraform destroy -var "EKS_NEW_CLUSTERNAME=${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}" -auto-approve
 
   pg-install:
+    permissions:
+      actions: write
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.pg-install == 'true'
@@ -224,6 +244,8 @@ jobs:
             })
 
   consul-install:
+    permissions:
+      actions: write
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.consul-install == 'true'
@@ -246,6 +268,8 @@ jobs:
             })
 
   zookeeper-install:
+    permissions:
+      actions: write
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.zookeeper-install == 'true'
@@ -268,6 +292,8 @@ jobs:
             })
 
   kafka-install:
+    permissions:
+      actions: write
     needs: [tf-post-install, zookeeper-install]
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.kafka-install == 'true'
@@ -290,6 +316,8 @@ jobs:
             })
 
   rabbitmq-install:
+    permissions:
+      actions: write
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.rabbitmq-install == 'true'
@@ -312,6 +340,8 @@ jobs:
             })
 
   cassandra-install:
+    permissions:
+      actions: write
     needs: tf-post-install
     environment: "${{github.event.inputs.environment}}"
     if: github.event.inputs.cassandra-install == 'true'

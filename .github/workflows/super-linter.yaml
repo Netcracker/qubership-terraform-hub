@@ -25,6 +25,11 @@ on:
         default: false
         required: false
         description: "Lint all codebase"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

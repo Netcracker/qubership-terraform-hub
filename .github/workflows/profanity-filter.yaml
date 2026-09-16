@@ -9,12 +9,19 @@ on:
   pull_request:
     types: [opened, edited, reopened]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
 permissions:
   issues: write
   pull-requests: write
 
 jobs:
   apply-filter:
+    permissions:
+      issues: write
+      pull-requests: write
     name: "Apply Profanity Filter"
     runs-on: ubuntu-latest
     steps:

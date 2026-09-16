@@ -7,10 +7,17 @@ on:
   workflow_dispatch: null
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
   linkChecker:
+    permissions:
+      contents: read
     name: "Run Link Checker"
     runs-on: ubuntu-latest
     steps:

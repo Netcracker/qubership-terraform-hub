@@ -10,11 +10,17 @@ on:
       - synchronize
       - reopened
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: read
 
 jobs:
   main:
+    permissions:
+      pull-requests: read
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:

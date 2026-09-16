@@ -22,6 +22,8 @@ on:
 
 jobs:
   stop-instances:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code

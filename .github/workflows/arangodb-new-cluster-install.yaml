@@ -10,6 +10,8 @@ on:
 
 jobs:
   Install-ArangoDB:
+    permissions:
+      contents: read
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
 
@@ -30,11 +32,13 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install ArangoDB
         run: |
          cd ./arangodb
-         kubectl create namespace arangodb    
+         kubectl create namespace arangodb
          helm repo add arangodb https://arangodb.github.io/kube-arangodb
          helm repo update
          helm install arangodb-operator arangodb/kube-arangodb --namespace arangodb --set operator.replicaCount=1
