@@ -10,64 +10,18 @@ on:
 
 jobs:
   Install-Kafka:
+    uses: ./.github/workflows/_install-helm-component.yml
     permissions:
       contents: read
-    environment: "${{github.event.inputs.environment}}"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Clone public qubership-kafka repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          repository: Netcracker/qubership-kafka
-          path: qubership-kafka
-
-      - name: Listing downloaded files
-        run: |
-          pwd
-          ls -R qubership-kafka
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
-        with:
-          version: 'v1.32.0'
-
-      - name: Setup Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-
-      - name: Verify tools
-        run: |
-          kubectl version --client
-          helm version
-          aws --version
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-
-      - name: Configure kubeconfig for EKS
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
-        run: |
-          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
-
-      - name: Verify cluster access
-        run: kubectl get nodes
-
-      - name: Install Kafka
-        env:
-          KAFKA_INSTALL_NAMESPACE: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}
-        run: |
-          cd ./kafka
-          echo "Namespace to install: $KAFKA_INSTALL_NAMESPACE"
-          helm install --namespace="$KAFKA_INSTALL_NAMESPACE" --create-namespace -f ./sample.yaml kafka ../qubership-kafka/operator/charts/helm/kafka
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    with:
+      component_name: Kafka
+      environment: "${{ github.event.inputs.environment }}"
+      chart_repo: Netcracker/qubership-kafka
+      chart_path: operator/charts/helm/kafka
+      values_dir: ./kafka
+      values_file: sample.yaml
+      release_name: kafka
+      namespace: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}
