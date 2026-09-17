@@ -37,8 +37,8 @@ on:
         description: "Helm release name"
         required: true
         type: string
-      namespace_var:
-        description: "Name of the vars.* entry holding the target namespace, e.g. TF_VAR_CONSUL_INSTALL_NAMESPACE"
+      namespace:
+        description: "Target namespace to install into, e.g. the value of vars.TF_VAR_CONSUL_INSTALL_NAMESPACE"
         required: true
         type: string
     secrets:
@@ -106,7 +106,7 @@ jobs:
 
       - name: Install ${{ inputs.component_name }}
         env:
-          INSTALL_NAMESPACE: ${{ vars[inputs.namespace_var] }}
+          INSTALL_NAMESPACE: ${{ inputs.namespace }}
           VALUES_DIR: ${{ inputs.values_dir }}
           VALUES_FILE: ${{ inputs.values_file }}
           RELEASE_NAME: ${{ inputs.release_name }}

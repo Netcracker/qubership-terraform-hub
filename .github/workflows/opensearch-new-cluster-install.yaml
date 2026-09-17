@@ -22,4 +22,4 @@ jobs:
       values_dir: ./opensearch
       values_file: example-config.yaml
       release_name: opensearch
-      namespace_var: TF_VAR_OPENSEARCH_INSTALL_NAMESPACE
+      namespace: ${{ vars.TF_VAR_OPENSEARCH_INSTALL_NAMESPACE }}

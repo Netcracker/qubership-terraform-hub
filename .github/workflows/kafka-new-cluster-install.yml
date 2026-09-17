@@ -22,4 +22,4 @@ jobs:
       values_dir: ./kafka
       values_file: sample.yaml
       release_name: kafka
-      namespace_var: TF_VAR_KAFKA_INSTALL_NAMESPACE
+      namespace: ${{ vars.TF_VAR_KAFKA_INSTALL_NAMESPACE }}

@@ -22,4 +22,4 @@ jobs:
       values_dir: ./rabbitmq
       values_file: example-config.yaml
       release_name: rabbitmq-service
-      namespace_var: TF_VAR_RABBIT_INSTALL_NAMESPACE
+      namespace: ${{ vars.TF_VAR_RABBIT_INSTALL_NAMESPACE }}
