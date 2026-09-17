@@ -195,28 +195,28 @@ jobs:
           # Update and install dependencies
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jre curl unzip
-      
+
           # Fetch the latest Allure release download URL from the GitHub API
           ALLURE_URL=$(curl -s https://api.github.com/repos/allure-framework/allure2/releases/latest \
             | grep '"browser_download_url":' \
             | grep -o 'https://[^"]*allure-[0-9][^"]*\.zip' \
             | head -1)
-      
+
           if [ -z "$ALLURE_URL" ]; then
             echo "❌ Failed to fetch the latest Allure release URL."
             exit 1
           fi
           echo "Latest Allure URL: $ALLURE_URL"
-      
+
           # Extract the version from the URL, e.g. .../2.35.1/allure-2.35.1.zip -> 2.35.1
           ALLURE_VERSION=$(echo "$ALLURE_URL" | sed -E 's|.*/allure-([0-9.]+)\.zip|\1|')
           echo "Latest Allure version: $ALLURE_VERSION"
-      
+
           # Download and install
           curl -L -o "allure-${ALLURE_VERSION}.zip" "$ALLURE_URL"
           unzip -q "allure-${ALLURE_VERSION}.zip" -d /opt/
           sudo ln -sf "/opt/allure-${ALLURE_VERSION}/bin/allure" /usr/local/bin/allure
-      
+
           # Verify
           echo "Java version:"
           java -version
