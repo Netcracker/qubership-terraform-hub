@@ -27,36 +27,43 @@ on:
 
 jobs:
   deploy-runner:
+    permissions:
+      contents: read
     name: Deploy GitHub Runner
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && !github.event.inputs.destroy_runner
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.destroy_runner != 'true'
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.12.2
 
       - name: Generate temporary runner token
         id: generate-token
+        env:
+          GITHUB_REPOSITORY_SLUG: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # For repository-level runner
           TOKEN=$(curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY_SLUG}/actions/runners/registration-token" \
             | jq -r .token)
-          
+
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
           echo "::add-mask::$TOKEN"  # Mask token in logs
 
@@ -65,14 +72,18 @@ jobs:
         working-directory: ./spawn-github-runner
 
       - name: Terraform Plan
+        env:
+          GITHUB_RUNNER_TOKEN: ${{ steps.generate-token.outputs.token }}
+          RUNNER_INSTANCE_TYPE: ${{ github.event.inputs.instance_type }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
         run: |
           terraform plan \
-            -var="github_token=${{ steps.generate-token.outputs.token }}" \
-            -var="github_org=${{ github.repository_owner }}" \
-            -var="github_repo=${{ github.event.repository.name }}" \
-            -var="instance_type=${{ github.event.inputs.instance_type }}" \
+            -var="github_token=${GITHUB_RUNNER_TOKEN}" \
+            -var="github_org=${GITHUB_ORG}" \
+            -var="github_repo=${GITHUB_REPO_NAME}" \
+            -var="instance_type=${RUNNER_INSTANCE_TYPE}" \
             -out=tfplan
-            
         working-directory: ./spawn-github-runner
 
       - name: Terraform Apply
@@ -85,24 +96,29 @@ jobs:
           INSTANCE_ID=$(terraform output -raw instance_id)
           PUBLIC_IP=$(terraform output -raw public_ip)
           RUNNER_NAME=$(terraform output -raw runner_name)
-          
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
-          echo "runner_name=$RUNNER_NAME" >> $GITHUB_OUTPUT
+
+          {
+            echo "instance_id=$INSTANCE_ID"
+            echo "public_ip=$PUBLIC_IP"
+            echo "runner_name=$RUNNER_NAME"
+          } >> $GITHUB_OUTPUT
         working-directory: ./spawn-github-runner
 
       - name: Wait for runner registration
+        env:
+          RUNNER_NAME: ${{ steps.runner-info.outputs.runner_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_SLUG: ${{ github.repository }}
         run: |
           echo "Waiting for runner to register..."
           sleep 60
-          
+
           # Check if runner is online
-          RUNNER_NAME="${{ steps.runner-info.outputs.runner_name }}"
-          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runners")
-          
+          RESPONSE=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY_SLUG}/actions/runners")
+
           ONLINE=$(echo "$RESPONSE" | jq -r ".runners[] | select(.name == \"$RUNNER_NAME\") | .status")
-          
+
           if [ "$ONLINE" = "online" ]; then
             echo "✅ Runner is online!"
           else
@@ -111,34 +127,45 @@ jobs:
           fi
 
       - name: Update deployment summary
+        env:
+          RUNNER_INSTANCE_ID: ${{ steps.runner-info.outputs.instance_id }}
+          RUNNER_PUBLIC_IP: ${{ steps.runner-info.outputs.public_ip }}
+          RUNNER_NAME: ${{ steps.runner-info.outputs.runner_name }}
+          RUNNER_LABELS: ${{ github.event.inputs.runner_labels }}
         run: |
-          echo "## 🚀 GitHub Runner Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Instance ID:** ${{ steps.runner-info.outputs.instance_id }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Public IP:** ${{ steps.runner-info.outputs.public_ip }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Runner Name:** ${{ steps.runner-info.outputs.runner_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Labels:** ${{ github.event.inputs.runner_labels }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🚀 GitHub Runner Deployment Complete"
+            echo ""
+            echo "**Instance ID:** $RUNNER_INSTANCE_ID"
+            echo "**Public IP:** $RUNNER_PUBLIC_IP"
+            echo "**Runner Name:** $RUNNER_NAME"
+            echo "**Labels:** $RUNNER_LABELS"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
           echo "The runner should appear in your repository settings shortly."
 
   destroy-runner:
+    permissions:
+      contents: read
     name: Destroy GitHub Runner
     runs-on: ubuntu-latest
-    if: github.event.inputs.destroy_runner
+    if: github.event.inputs.destroy_runner == 'true'
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Terraform Init
         run: terraform init
@@ -146,40 +173,47 @@ jobs:
 
 
       - name: Terraform Destroy
+        env:
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
         run: |
           terraform destroy -auto-approve \
             -var="github_token=dummy-token" \
-            -var="github_org=${{ github.repository_owner }}" \
-            -var="github_repo=${{ github.event.repository.name }}"
+            -var="github_org=${GITHUB_ORG}" \
+            -var="github_repo=${GITHUB_REPO_NAME}"
         working-directory: ./spawn-github-runner
 
 
       - name: Update destruction summary
         run: |
-          echo "## 🗑️ GitHub Runner Destroyed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Runner infrastructure has been successfully destroyed." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🗑️ GitHub Runner Destroyed"
+            echo ""
+            echo "Runner infrastructure has been successfully destroyed."
+          } >> $GITHUB_STEP_SUMMARY
 
   cleanup-old-runners:
+    permissions:
+      actions: write
     name: Cleanup Old Runners
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
 
     steps:
       - name: Check for offline runners
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { data: runners } = await github.rest.actions.listSelfHostedRunnersForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
             });
-            
-            const offlineRunners = runners.runners.filter(runner => 
-              runner.status === 'offline' && 
+
+            const offlineRunners = runners.runners.filter(runner =>
+              runner.status === 'offline' &&
               runner.name.includes('github-runner-')
             );
-            
+
             for (const runner of offlineRunners) {
               console.log(`Removing offline runner: ${runner.name}`);
               await github.rest.actions.deleteSelfHostedRunnerFromRepo({

@@ -22,6 +22,8 @@ on:
 
 jobs:
   stop-instances:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -35,17 +37,21 @@ jobs:
           yq --version
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Debug
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          DELETE_TARGET_GROUPS_INPUT: ${{ github.event.inputs.delete_target_groups }}
         run: |
-          echo "Triggered by: ${{ github.event_name }}"
-          echo "Dry run: ${{ github.event.inputs.dry_run }}"
-          echo "Delete Target Groups: ${{ github.event.inputs.delete_target_groups }}"
+          echo "Triggered by: $EVENT_NAME"
+          echo "Dry run: $DRY_RUN_INPUT"
+          echo "Delete Target Groups: $DELETE_TARGET_GROUPS_INPUT"
           echo "Clusters config:"
           cat ./ec2-scheduled/clusters.yaml
 

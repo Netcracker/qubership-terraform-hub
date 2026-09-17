@@ -43,6 +43,9 @@ permissions:
 
 jobs:
   generate-and-upload:
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -57,10 +60,10 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install boto3 jinja2 reportlab openpyxl
+        run: pip install boto3==1.43.95 jinja2==3.1.6 reportlab==5.0.1 openpyxl==3.1.5
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -129,7 +132,7 @@ jobs:
 
       - name: Send email
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
-        uses: netcracker/qubership-workflow-hub/actions/email-action@288a6a0d9a78e80dfdefccab1be6497a39deb746  # v2.8.0
+        uses: netcracker/qubership-workflow-hub/actions/email-action@288a6a0d9a78e80dfdefccab1be6497a39deb746 # v2.8.0
         with:
           server-address: smtp.gmail.com
           server-port: 587

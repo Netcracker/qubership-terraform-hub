@@ -19,15 +19,20 @@ env:
 
 jobs:
   generate-allure-report:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -35,74 +40,80 @@ jobs:
 
       - name: Parse S3 path
         id: parse_path
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          S3_DIRECTORY_INPUT: ${{ github.event.inputs.s3_directory }}
+          CLIENT_PAYLOAD_DIRECTORY: ${{ github.event.client_payload.directory }}
         run: |
           # Parse S3 directory from input
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            S3_DIR="${{ github.event.inputs.s3_directory }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            S3_DIR="$S3_DIRECTORY_INPUT"
             echo "Using manual input: $S3_DIR"
-          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            S3_DIR="${{ github.event.client_payload.directory }}"
+          elif [ "$EVENT_NAME" == "repository_dispatch" ]; then
+            S3_DIR="$CLIENT_PAYLOAD_DIRECTORY"
             echo "Using repository dispatch: $S3_DIR"
           else
             echo "Unknown trigger"
             exit 1
           fi
-          
+
           # Remove trailing slash if present
           S3_DIR=${S3_DIR%/}
           echo "S3_DIR=$S3_DIR" >> $GITHUB_OUTPUT
-          
+
           # Extract test type (the folder after Result/)
           # Format: Result/[test-type]/YYYY-MM-DD/HH-MM-SS
           TEST_TYPE=$(echo "$S3_DIR" | cut -d'/' -f2)
           echo "TEST_TYPE=$TEST_TYPE" >> $GITHUB_OUTPUT
-          
+
           # Extract timestamp path (everything after Result/[test-type]/)
-          TIMESTAMP_PATH=$(echo "$S3_DIR" | sed "s|^Result/$TEST_TYPE/||")
+          TIMESTAMP_PATH=${S3_DIR#Result/"$TEST_TYPE"/}
           echo "TIMESTAMP_PATH=$TIMESTAMP_PATH" >> $GITHUB_OUTPUT
-          
+
           # Create safe identifier
           SAFE_ID="$(echo "$TIMESTAMP_PATH" | sed 's|/|_|g' | sed 's|-|_|g')"
           echo "SAFE_ID=$SAFE_ID" >> $GITHUB_OUTPUT
-          
+
           echo "Parsed: Timestamp: $TIMESTAMP_PATH"
           echo "Report path: Report/$TIMESTAMP_PATH"
 
       - name: Download Allure results from S3
         id: download
+        env:
+          PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
         run: |
-          echo "Downloading from: s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/"
+          echo "Downloading from: s3://$S3_BUCKET/$PARSED_S3_DIR/"
           mkdir -p $SOURCE_DIR
-          
+
           # First, check what's in S3
           echo "Listing S3 contents:"
-          aws s3 ls "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" --recursive || true
-          
+          aws s3 ls "s3://$S3_BUCKET/$PARSED_S3_DIR/" --recursive || true
+
           # Download ALL files from the S3 directory (including subdirectories)
           echo "Downloading files..."
-          aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
-          
+          aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+
           # Check what was downloaded
           echo "Downloaded files:"
           find $SOURCE_DIR -type f | sort
-          
+
           # Count files
           XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
           JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
           echo "XML_FILES=$XML_COUNT" >> $GITHUB_OUTPUT
           echo "JSON_FILES=$JSON_COUNT" >> $GITHUB_OUTPUT
           echo "Total files downloaded: $(find $SOURCE_DIR -type f | wc -l)"
-          
+
           # If no files, try downloading everything
           if [ $XML_COUNT -eq 0 ] && [ $JSON_COUNT -eq 0 ]; then
             echo "No XML/JSON files found with filters, downloading everything..."
-            aws s3 sync "s3://$S3_BUCKET/${{ steps.parse_path.outputs.S3_DIR }}/" $SOURCE_DIR/
-          
+            aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/
+
             XML_COUNT=$(find $SOURCE_DIR -name "*.xml" | wc -l)
             JSON_COUNT=$(find $SOURCE_DIR -name "*.json" | wc -l)
             echo "After full sync - XML: $XML_COUNT, JSON: $JSON_COUNT"
           fi
-          
+
           # Check file contents
           if [ $XML_COUNT -gt 0 ]; then
             echo "Checking first XML file structure:"
@@ -114,35 +125,37 @@ jobs:
         id: pass_rate
         run: |
           JSON_FILES=$(find $SOURCE_DIR -name "*.json" -type f)
-          
+
           if [ -z "$JSON_FILES" ]; then
             echo "No JSON files found"
-            echo "PASS_RATE=No data" >> $GITHUB_OUTPUT
-            echo "TOTAL_TESTS=0" >> $GITHUB_OUTPUT
-            echo "PASSED_TESTS=0" >> $GITHUB_OUTPUT
-            echo "SKIPPED_TESTS=0" >> $GITHUB_OUTPUT
-            echo "UNKNOWN_TESTS=0" >> $GITHUB_OUTPUT
+            {
+              echo "PASS_RATE=No data"
+              echo "TOTAL_TESTS=0"
+              echo "PASSED_TESTS=0"
+              echo "SKIPPED_TESTS=0"
+              echo "UNKNOWN_TESTS=0"
+            } >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           TOTAL=0
           PASSED=0
           SKIPPED=0
           UNKNOWN=0
           OTHER=0
-          
+
           # Debug: print statuses found
           echo "=== Statuses found in JSON files ==="
-          
+
           for file in $JSON_FILES; do
             status=$(jq -r '.status // .result // .state // "unknown"' "$file" 2>/dev/null || echo "unknown")
             status_lower=$(echo "$status" | tr '[:upper:]' '[:lower:]')
-            
+
             # Debug: print each file's status
             echo "  $(basename "$file"): $status_lower"
-            
+
             TOTAL=$((TOTAL + 1))
-            
+
             case "$status_lower" in
               passed|pass|success)
                 PASSED=$((PASSED + 1))
@@ -158,30 +171,32 @@ jobs:
                 ;;
             esac
           done
-          
+
           echo "=== Summary ==="
           echo "Total JSON files: $TOTAL"
           echo "Passed: $PASSED"
           echo "Skipped: $SKIPPED"
           echo "Unknown: $UNKNOWN"
           echo "Other (failed/broken/etc): $OTHER"
-          
+
           # Calculate pass rate EXCLUDING both skipped AND unknown (matches Allure behavior)
           EXCLUDED=$((SKIPPED + UNKNOWN))
           EXECUTED=$((TOTAL - EXCLUDED))
-          
+
           if [ $EXECUTED -gt 0 ]; then
-            PASS_RATE=$(echo "scale=2; $PASSED * 100 / $EXECUTED" | bc)
-            echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_OUTPUT
+            PASS_RATE="$(echo "scale=2; $PASSED * 100 / $EXECUTED" | bc)%"
           else
-            echo "PASS_RATE=No tests executed" >> $GITHUB_OUTPUT
+            PASS_RATE="No tests executed"
           fi
-          
-          echo "TOTAL_TESTS=$TOTAL" >> $GITHUB_OUTPUT
-          echo "PASSED_TESTS=$PASSED" >> $GITHUB_OUTPUT
-          echo "SKIPPED_TESTS=$SKIPPED" >> $GITHUB_OUTPUT
-          echo "UNKNOWN_TESTS=$UNKNOWN" >> $GITHUB_OUTPUT
-          
+
+          {
+            echo "PASS_RATE=${PASS_RATE}"
+            echo "TOTAL_TESTS=$TOTAL"
+            echo "PASSED_TESTS=$PASSED"
+            echo "SKIPPED_TESTS=$SKIPPED"
+            echo "UNKNOWN_TESTS=$UNKNOWN"
+          } >> $GITHUB_OUTPUT
+
           echo "📊 Test Summary: Total=$TOTAL, Passed=$PASSED, Skipped=$SKIPPED, Unknown=$UNKNOWN, Executed=$EXECUTED, Rate=${PASS_RATE}%"
 
       - name: Install Java and Allure
@@ -189,12 +204,12 @@ jobs:
           # Update and install Java
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jre curl unzip
-          
+
           # Download and install Allure
           curl -L -o allure-2.35.1.zip https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip
           unzip -q allure-2.35.1.zip -d /opt/
           sudo ln -sf /opt/allure-2.35.1/bin/allure /usr/local/bin/allure
-          
+
           # Verify
           echo "Java version:"
           java -version
@@ -203,35 +218,39 @@ jobs:
 
       - name: Generate Allure Reports
         id: generate
+        env:
+          XML_FILES: ${{ steps.download.outputs.XML_FILES }}
+          JSON_FILES: ${{ steps.download.outputs.JSON_FILES }}
+          PARSED_TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
         run: |
-          echo "Generating Allure reports from: $SOURCE_DIR for test type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
-          
+          echo "Generating Allure reports from: $SOURCE_DIR for test type: $PARSED_TEST_TYPE"
+
           # Clean previous reports
           rm -rf $OUTPUT_DIR $SINGLE_FILE_DIR
           mkdir -p $OUTPUT_DIR $SINGLE_FILE_DIR
-          
+
           # Check if we have test files
-          if [ ${{ steps.download.outputs.XML_FILES }} -gt 0 ] || [ ${{ steps.download.outputs.JSON_FILES }} -gt 0 ]; then
+          if [ "${XML_FILES:-0}" -gt 0 ] || [ "${JSON_FILES:-0}" -gt 0 ]; then
             echo "Found test files, generating reports..."
             pwd
             echo "Debug contents of allure-results"
             echo "$SOURCE_DIR"
             ls -la $SOURCE_DIR/
-          
+
             # Generate multi-file report
             echo "Generating multi-file report..."
             /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results -o $OUTPUT_DIR/ --clean
-          
+
             echo "Generated files in $OUTPUT_DIR"
             ls -la $OUTPUT_DIR/
-          
+
             # Generate single-file report
             echo "Generating single-file report..."
-            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results -o $SINGLE_FILE_DIR --clean --single-file 
-          
+            /opt/allure-2.35.1/bin/allure generate $SOURCE_DIR/allure-results -o $SINGLE_FILE_DIR --clean --single-file
+
             echo "Generated files in $SINGLE_FILE_DIR"
             ls -la $SINGLE_FILE_DIR/
-          
+
             # Check results
             if [ -f "$OUTPUT_DIR/index.html" ]; then
               echo "✅ Multi-file report generated"
@@ -244,26 +263,28 @@ jobs:
             echo "❌ No test files found"
             echo "REPORT_GENERATED=false" >> $GITHUB_OUTPUT
           fi
-          
+
           # Debug: Show generated files
           echo "Generated files in $OUTPUT_DIR:"
           find $OUTPUT_DIR -type f | head -20 || echo "No files"
-          
+
           echo "Generated files in $SINGLE_FILE_DIR:"
           find $SINGLE_FILE_DIR -type f | head -20 || echo "No files"
 
       - name: Upload Reports to S3
         if: steps.generate.outputs.REPORT_GENERATED == 'true'
+        env:
+          TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
+          TIMESTAMP_PATH: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
+          PARSED_SAFE_ID: ${{ steps.parse_path.outputs.SAFE_ID }}
         run: |
-          TEST_TYPE="${{ steps.parse_path.outputs.TEST_TYPE }}"
-          TIMESTAMP_PATH="${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
           REPORT_BASE_PATH="Report/$TEST_TYPE/$TIMESTAMP_PATH"
-          
+
           echo "Uploading to: s3://$S3_BUCKET/$REPORT_BASE_PATH/"
-          
+
           # Clean existing reports
           aws s3 rm "s3://$S3_BUCKET/$REPORT_BASE_PATH/" --recursive --quiet || true
-          
+
           # Upload multi-file report if it exists
           if [ -f "$OUTPUT_DIR/index.html" ]; then
             echo "Uploading multi-file report..."
@@ -271,66 +292,73 @@ jobs:
             MULTI_URL="https://atp-reports.dev.qubership.org/$REPORT_BASE_PATH/allure-report/index.html"
             echo "MULTI_URL=$MULTI_URL" >> $GITHUB_ENV
           fi
-          
+
           # Upload single-file report
           SINGLE_FILE=$(find $SINGLE_FILE_DIR -name "*.html" | head -1)
           if [ -n "$SINGLE_FILE" ]; then
-            SINGLE_NAME="allure-report-${{ steps.parse_path.outputs.SAFE_ID }}.html"
+            SINGLE_NAME="allure-report-${PARSED_SAFE_ID}.html"
             echo "Uploading single-file as: $SINGLE_NAME"
-          
+
             # Copy and rename
             cp "$SINGLE_FILE" "$SINGLE_FILE_DIR/$SINGLE_NAME"
             aws s3 cp "$SINGLE_FILE_DIR/$SINGLE_NAME" "s3://$S3_BUCKET/$REPORT_BASE_PATH/$SINGLE_NAME" --quiet
             echo "DIRECT_S3_LINK=s3://$S3_BUCKET/$REPORT_BASE_PATH/" >> $GITHUB_ENV
-          
+
             SINGLE_URL="https://atp-reports.dev.qubership.org/$REPORT_BASE_PATH/$SINGLE_NAME"
             echo "SINGLE_URL=$SINGLE_URL" >> $GITHUB_ENV
           fi
-          
+
           # Create a test file to verify upload
           echo "Test upload successful at $(date) for test type: $TEST_TYPE" > upload-test.txt
           aws s3 cp upload-test.txt "s3://$S3_BUCKET/$REPORT_BASE_PATH/upload-test.txt"
 
-      #- name: Create Artifacts
-        #if: always()
-        #uses: actions/upload-artifact@v4
-        #with:
-          #name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
-          #path: |
-            #$SOURCE_DIR/
-            #$OUTPUT_DIR/
-            #$SINGLE_FILE_DIR/
-          #retention-days: 7
+      # - name: Create Artifacts
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: allure-debug-${{ steps.parse_path.outputs.SAFE_ID }}
+      #     path: |
+      #       $SOURCE_DIR/
+      #       $OUTPUT_DIR/
+      #       $SINGLE_FILE_DIR/
+      #     retention-days: 7
 
       - name: Output Results
+        env:
+          PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
+          PARSED_TEST_TYPE: ${{ steps.parse_path.outputs.TEST_TYPE }}
+          PARSED_TIMESTAMP_PATH: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}
+          DOWNLOADED_XML_FILES: ${{ steps.download.outputs.XML_FILES }}
+          DOWNLOADED_JSON_FILES: ${{ steps.download.outputs.JSON_FILES }}
+          REPORT_GENERATED: ${{ steps.generate.outputs.REPORT_GENERATED }}
         run: |
           echo ""
           echo "========================================"
           echo "RESULTS SUMMARY"
           echo "========================================"
           echo ""
-          echo "Source: ${{ steps.parse_path.outputs.S3_DIR }}"
-          echo "Test Type: ${{ steps.parse_path.outputs.TEST_TYPE }}"
-          echo "Timestamp: ${{ steps.parse_path.outputs.TIMESTAMP_PATH }}"
-          echo "Test files: ${{ steps.download.outputs.XML_FILES }} XML, ${{ steps.download.outputs.JSON_FILES }} JSON"
+          echo "Source: $PARSED_S3_DIR"
+          echo "Test Type: $PARSED_TEST_TYPE"
+          echo "Timestamp: $PARSED_TIMESTAMP_PATH"
+          echo "Test files: $DOWNLOADED_XML_FILES XML, $DOWNLOADED_JSON_FILES JSON"
           echo ""
-          
-          if [ "${{ steps.generate.outputs.REPORT_GENERATED }}" = "true" ]; then
+
+          if [ "$REPORT_GENERATED" = "true" ]; then
             echo "✅ REPORTS GENERATED"
             echo ""
-          
-            if [ -n "${{ env.MULTI_URL }}" ]; then
+
+            if [ -n "$MULTI_URL" ]; then
               echo "📊 Multi-file report:"
-              echo "   ${{ env.MULTI_URL }}"
+              echo "   $MULTI_URL"
             fi
-          
-            if [ -n "${{ env.SINGLE_URL }}" ]; then
+
+            if [ -n "$SINGLE_URL" ]; then
               echo ""
               echo "📥 Single-file report:"
-              echo "   ${{ env.SINGLE_URL }}"
+              echo "   $SINGLE_URL"
               echo ""
               echo "Download command:"
-              echo "curl -LO '${{ env.SINGLE_URL }}'"
+              echo "curl -LO '$SINGLE_URL'"
             fi
           else
             echo "❌ REPORTS FAILED"
@@ -343,35 +371,35 @@ jobs:
           fi
 
       - name: Send email notification
-        uses: netcracker/qubership-workflow-hub/actions/email-action@27fd7674286e5f561a6fd8277f2f389ff96ddb9e
+        uses: netcracker/qubership-workflow-hub/actions/email-action@288a6a0d9a78e80dfdefccab1be6497a39deb746 # v2.8.0
         env:
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_USERNAME: ${{ vars.EMAIL_FROM }}
           EMAIL_PASSWORD:  ${{ secrets.EMAIL_PASSWORD }}
         with:
-          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}		
+          to: ${{ secrets.EMAIL_RECIPIENT_1 }}, ${{ secrets.EMAIL_RECIPIENT_2 }}, ${{ secrets.EMAIL_RECIPIENT_ATP }}
           subject: "Allure reports - ${{ github.repository }} - ${{ steps.parse_path.outputs.TEST_TYPE }} - Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}"
           body: |
             Hello,
-          
+
             The Allure report has been successfully generated for **${{ steps.parse_path.outputs.TEST_TYPE }}**.
-          
+
             📊 **Test Results:**
             - Total Tests: ${{ steps.pass_rate.outputs.TOTAL_TESTS }}
             - Passed: ${{ steps.pass_rate.outputs.PASSED_TESTS }}
             - Skipped: ${{ steps.pass_rate.outputs.SKIPPED_TESTS }}
             - **Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}** (based on executed tests only)
-          
+
             DOWNLOAD LINKS:
             Single report file: ${{ env.SINGLE_URL }}
             Multi report file: ${{ env.MULTI_URL }}
             Direct link for usage with WinSCP or analog viewers (needs authorization): ${{ env.DIRECT_S3_LINK }}
-          
+
             Best regards,
             DevOps Team
 
       - name: Trigger Results Push to Git
-        uses: actions/github-script@v6
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({

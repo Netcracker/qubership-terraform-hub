@@ -10,32 +10,39 @@ on:
 
 jobs:
   Install-Cassandra:
+    permissions:
+      contents: read
     environment: "${{github.event.inputs.environment}}"
     runs-on: ubuntu-latest
 
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Configure kubeconfig for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          EKS_CLUSTER_NAME: ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
         run: |
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-1' }} --name ${{ vars.TF_VAR_EKS_NEW_CLUSTERNAME }}
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Verify cluster access
         run: kubectl get nodes
 
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-#      - name: Clone public cert-manager repo
-#        uses: actions/checkout@v7
-#        with:
-#          repository: git clone cert-manager/cert-manager
-#          path: cert-manager
+      # - name: Clone public cert-manager repo
+      #   uses: actions/checkout@v7
+      #   with:
+      #     repository: git clone cert-manager/cert-manager
+      #     path: cert-manager
 
       - name: Install Cert-Manager
         run: |
