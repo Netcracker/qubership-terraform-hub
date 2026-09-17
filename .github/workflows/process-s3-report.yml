@@ -91,7 +91,16 @@ jobs:
 
           # Download ALL files from the S3 directory (including subdirectories)
           echo "Downloading files..."
-          aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/ --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+          aws s3 sync "s3://$S3_BUCKET/$PARSED_S3_DIR/" $SOURCE_DIR/ \
+            --exclude "*" --include "*.xml" --include "*.json" --include "*.txt"
+
+          # Ensure the dedicated pass‑rate file is present
+          PASS_RATE_FILE="email-notification-results-generated.json"
+          if [ ! -f "$SOURCE_DIR/$PASS_RATE_FILE" ]; then
+            echo "Pass‑rate file not found after sync; trying direct download..."
+            aws s3 cp "s3://$S3_BUCKET/$PARSED_S3_DIR/$PASS_RATE_FILE" \
+                     "$SOURCE_DIR/$PASS_RATE_FILE" || true
+          fi
 
           # Check what was downloaded
           echo "Downloaded files:"
@@ -121,13 +130,22 @@ jobs:
             head -20 "$FIRST_XML"
           fi
 
-      - name: Calculate test pass rate from JSON files
+      - name: Parse Pass Rate from Generated JSON
         id: pass_rate
+        env:
+          PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
         run: |
-          JSON_FILES=$(find $SOURCE_DIR -name "*.json" -type f)
+          RESULTS_FILE="email-notification-results-generated.json"
+          LOCAL_PATH="$SOURCE_DIR/$RESULTS_FILE"
 
-          if [ -z "$JSON_FILES" ]; then
-            echo "No JSON files found"
+          # If the file wasn't downloaded earlier, fetch it now
+          if [ ! -f "$LOCAL_PATH" ]; then
+            echo "File not present locally; downloading from S3..."
+            aws s3 cp "s3://$S3_BUCKET/$PARSED_S3_DIR/$RESULTS_FILE" "$LOCAL_PATH" || true
+          fi
+
+          if [ ! -f "$LOCAL_PATH" ]; then
+            echo "❌ $RESULTS_FILE not found. Cannot determine pass rate."
             {
               echo "PASS_RATE=No data"
               echo "TOTAL_TESTS=0"
@@ -138,66 +156,39 @@ jobs:
             exit 0
           fi
 
-          TOTAL=0
-          PASSED=0
-          SKIPPED=0
-          UNKNOWN=0
-          OTHER=0
+          # Extract values using jq (fields are nested under test_results)
+          PASS_RATE=$(jq -r '.test_results.pass_rate // "No data"' "$LOCAL_PATH")
+          TOTAL_TESTS=$(jq -r '.test_results.total_count // 0' "$LOCAL_PATH")
+          PASSED_TESTS=$(jq -r '.test_results.passed_count // 0' "$LOCAL_PATH")
+          SKIPPED_TESTS=$(jq -r '.test_results.skipped_count // 0' "$LOCAL_PATH")
+          FAILED_TESTS=$(jq -r '.test_results.failed_count // 0' "$LOCAL_PATH")
+          # Derive unknown/other from total - passed - skipped - failed
+          UNKNOWN_TESTS=$(jq -r '
+            ((.test_results.total_count // 0) -
+             (.test_results.passed_count // 0) -
+             (.test_results.skipped_count // 0) -
+             (.test_results.failed_count // 0))' "$LOCAL_PATH")
 
-          # Debug: print statuses found
-          echo "=== Statuses found in JSON files ==="
-
-          for file in $JSON_FILES; do
-            status=$(jq -r '.status // .result // .state // "unknown"' "$file" 2>/dev/null || echo "unknown")
-            status_lower=$(echo "$status" | tr '[:upper:]' '[:lower:]')
-
-            # Debug: print each file's status
-            echo "  $(basename "$file"): $status_lower"
-
-            TOTAL=$((TOTAL + 1))
-
-            case "$status_lower" in
-              passed|pass|success)
-                PASSED=$((PASSED + 1))
-                ;;
-              skipped|skip)
-                SKIPPED=$((SKIPPED + 1))
-                ;;
-              unknown)
-                UNKNOWN=$((UNKNOWN + 1))
-                ;;
-              *)
-                OTHER=$((OTHER + 1))
-                ;;
-            esac
-          done
-
-          echo "=== Summary ==="
-          echo "Total JSON files: $TOTAL"
-          echo "Passed: $PASSED"
-          echo "Skipped: $SKIPPED"
-          echo "Unknown: $UNKNOWN"
-          echo "Other (failed/broken/etc): $OTHER"
-
-          # Calculate pass rate EXCLUDING both skipped AND unknown (matches Allure behavior)
-          EXCLUDED=$((SKIPPED + UNKNOWN))
-          EXECUTED=$((TOTAL - EXCLUDED))
-
-          if [ $EXECUTED -gt 0 ]; then
-            PASS_RATE="$(echo "scale=2; $PASSED * 100 / $EXECUTED" | bc)%"
-          else
-            PASS_RATE="No tests executed"
+          # Ensure pass rate is a percentage string
+          if [[ "$PASS_RATE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            PASS_RATE="${PASS_RATE}%"
           fi
+
+          echo "=== Parsed Test Summary from $RESULTS_FILE ==="
+          echo "Pass Rate: $PASS_RATE"
+          echo "Total Tests: $TOTAL_TESTS"
+          echo "Passed: $PASSED_TESTS"
+          echo "Skipped: $SKIPPED_TESTS"
+          echo "Failed: $FAILED_TESTS"
+          echo "Unknown/Other: $UNKNOWN_TESTS"
 
           {
             echo "PASS_RATE=${PASS_RATE}"
-            echo "TOTAL_TESTS=$TOTAL"
-            echo "PASSED_TESTS=$PASSED"
-            echo "SKIPPED_TESTS=$SKIPPED"
-            echo "UNKNOWN_TESTS=$UNKNOWN"
+            echo "TOTAL_TESTS=${TOTAL_TESTS}"
+            echo "PASSED_TESTS=${PASSED_TESTS}"
+            echo "SKIPPED_TESTS=${SKIPPED_TESTS}"
+            echo "UNKNOWN_TESTS=${UNKNOWN_TESTS}"
           } >> $GITHUB_OUTPUT
-
-          echo "📊 Test Summary: Total=$TOTAL, Passed=$PASSED, Skipped=$SKIPPED, Unknown=$UNKNOWN, Executed=$EXECUTED, Rate=${PASS_RATE}%"
 
       - name: Install Java and Allure
         run: |
