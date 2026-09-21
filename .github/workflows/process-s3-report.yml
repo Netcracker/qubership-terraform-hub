@@ -136,10 +136,10 @@ jobs:
           PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
         run: |
           RESULTS_FILE="email-notification-results-generated.json"
-      
+
           # ── 1. Try to find the file locally (any sub‑directory) ────────────────
           LOCAL_PATH=$(find "$SOURCE_DIR" -type f -name "$RESULTS_FILE" 2>/dev/null | head -1)
-      
+
           # ── 2. Fallback: search S3 recursively and copy the exact key ─────────
           if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
             echo "Not found locally; searching S3 recursively under $PARSED_S3_DIR/ ..."
