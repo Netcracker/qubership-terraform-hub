@@ -42,9 +42,9 @@ jobs:
           echo "✅ Sync from S3 to temporary directory"
           aws s3 sync "s3://qstp-results/Result/" "/tmp/qubership-testing-results/Result/" --exclude "*" --include "*-result.json" --include "*email-notification-results-generated.json" --include "*test-details.txt"--quiet
 
-          echo "✅ Removing files that do not end with -result.json"
-          cd /tmp/qubership-testing-results
-          find Result/ -type f ! -name "*-result.json" -delete 1>/dev/null
+          #echo "✅ Removing files that do not end with -result.json"
+          #cd /tmp/qubership-testing-results
+          #find Result/ -type f ! -name "*-result.json" -delete 1>/dev/null
 
       - name: Push to Git
         run: |
