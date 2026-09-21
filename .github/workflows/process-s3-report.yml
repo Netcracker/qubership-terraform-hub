@@ -136,16 +136,41 @@ jobs:
           PARSED_S3_DIR: ${{ steps.parse_path.outputs.S3_DIR }}
         run: |
           RESULTS_FILE="email-notification-results-generated.json"
-          LOCAL_PATH="$SOURCE_DIR/$RESULTS_FILE"
-
-          # If the file wasn't downloaded earlier, fetch it now
-          if [ ! -f "$LOCAL_PATH" ]; then
-            echo "File not present locally; downloading from S3..."
-            aws s3 cp "s3://$S3_BUCKET/$PARSED_S3_DIR/$RESULTS_FILE" "$LOCAL_PATH" || true
+      
+          # ---------- 1. Try to find the file anywhere in the download tree ----------
+          LOCAL_PATH=$(find "$SOURCE_DIR" -type f -name "$RESULTS_FILE" 2>/dev/null | head -1)
+      
+          # ---------- 2. Fallback: direct download from S3 root of this run ----------
+          if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
+            echo "Not found locally; trying direct S3 download..."
+            aws s3 cp "s3://$S3_BUCKET/$PARSED_S3_DIR/$RESULTS_FILE" \
+                     "$SOURCE_DIR/$RESULTS_FILE" --only-show-errors || true
+            if [ -f "$SOURCE_DIR/$RESULTS_FILE" ]; then
+              LOCAL_PATH="$SOURCE_DIR/$RESULTS_FILE"
+            fi
           fi
-
-          if [ ! -f "$LOCAL_PATH" ]; then
-            echo "❌ $RESULTS_FILE not found. Cannot determine pass rate."
+      
+          # ---------- 3. Fallback: recursive S3 lookup under the run prefix ----------
+          if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
+            echo "Trying recursive S3 lookup under $PARSED_S3_DIR/ ..."
+            S3_KEY=$(aws s3 ls "s3://$S3_BUCKET/$PARSED_S3_DIR/" --recursive \
+                       | awk '{print $NF}' \
+                       | grep -F "$RESULTS_FILE" \
+                       | head -1)
+            if [ -n "$S3_KEY" ]; then
+              echo "Found in S3 at: s3://$S3_BUCKET/$S3_KEY"
+              LOCAL_PATH="$SOURCE_DIR/$RESULTS_FILE"
+              aws s3 cp "s3://$S3_BUCKET/$S3_KEY" "$LOCAL_PATH" --only-show-errors || true
+            fi
+          fi
+      
+          # ---------- 4. Give up gracefully ----------
+          if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
+            echo "❌ $RESULTS_FILE could not be located."
+            echo "--- Debug: files present under $SOURCE_DIR ---"
+            find "$SOURCE_DIR" -type f | sort || true
+            echo "--- Debug: S3 listing for $PARSED_S3_DIR ---"
+            aws s3 ls "s3://$S3_BUCKET/$PARSED_S3_DIR/" --recursive || true
             {
               echo "PASS_RATE=No data"
               echo "TOTAL_TESTS=0"
@@ -155,25 +180,41 @@ jobs:
             } >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          # Extract values using jq (fields are nested under test_results)
+      
+          echo "✅ Using results file: $LOCAL_PATH"
+      
+          # ---------- 5. Sanity check: is it valid JSON? ----------
+          if ! jq empty "$LOCAL_PATH" 2>/dev/null; then
+            echo "❌ File is not valid JSON. First 200 bytes:"
+            head -c 200 "$LOCAL_PATH"
+            echo
+            {
+              echo "PASS_RATE=No data"
+              echo "TOTAL_TESTS=0"
+              echo "PASSED_TESTS=0"
+              echo "SKIPPED_TESTS=0"
+              echo "UNKNOWN_TESTS=0"
+            } >> $GITHUB_OUTPUT
+            exit 0
+          fi
+      
+          # ---------- 6. Extract values ----------
           PASS_RATE=$(jq -r '.test_results.pass_rate // "No data"' "$LOCAL_PATH")
           TOTAL_TESTS=$(jq -r '.test_results.total_count // 0' "$LOCAL_PATH")
           PASSED_TESTS=$(jq -r '.test_results.passed_count // 0' "$LOCAL_PATH")
           SKIPPED_TESTS=$(jq -r '.test_results.skipped_count // 0' "$LOCAL_PATH")
           FAILED_TESTS=$(jq -r '.test_results.failed_count // 0' "$LOCAL_PATH")
-          # Derive unknown/other from total - passed - skipped - failed
           UNKNOWN_TESTS=$(jq -r '
             ((.test_results.total_count // 0) -
              (.test_results.passed_count // 0) -
              (.test_results.skipped_count // 0) -
              (.test_results.failed_count // 0))' "$LOCAL_PATH")
-
-          # Ensure pass rate is a percentage string
-          if [[ "$PASS_RATE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      
+          # Append % if it is numeric
+          if [[ "$PASS_RATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             PASS_RATE="${PASS_RATE}%"
           fi
-
+      
           echo "=== Parsed Test Summary from $RESULTS_FILE ==="
           echo "Pass Rate: $PASS_RATE"
           echo "Total Tests: $TOTAL_TESTS"
@@ -181,7 +222,7 @@ jobs:
           echo "Skipped: $SKIPPED_TESTS"
           echo "Failed: $FAILED_TESTS"
           echo "Unknown/Other: $UNKNOWN_TESTS"
-
+      
           {
             echo "PASS_RATE=${PASS_RATE}"
             echo "TOTAL_TESTS=${TOTAL_TESTS}"
@@ -189,7 +230,6 @@ jobs:
             echo "SKIPPED_TESTS=${SKIPPED_TESTS}"
             echo "UNKNOWN_TESTS=${UNKNOWN_TESTS}"
           } >> $GITHUB_OUTPUT
-
       - name: Install Java and Allure
         run: |
           # Update and install dependencies
