@@ -8,6 +8,12 @@ components:
     init_run_reconfigure: true
     # Backend (s3 / gcs / azurerm) comes from stacks/mixins/<cloud>.yaml
     auto_generate_backend_file: true
+  helmfile:
+    base_path: "components/helmfile"
+    # Cloud-agnostic: KUBECONFIG is written from the k8s-cluster `kubeconfig` output (see stacks/workflows/k8s.yaml)
+    use_eks: false
+workflows:
+  base_path: "stacks/workflows"
 stacks:
   base_path: "stacks"
   included_paths:
@@ -19,6 +25,23 @@ templates:
     enabled: true
     sprig:
       enabled: true
+# Tool versions are pinned in stacks via dependencies.tools and installed by Atmos itself
+toolchain:
+  aliases:
+    terraform: hashicorp/terraform
+    helmfile: helmfile/helmfile
+    helm: helm/helm
+    kubectl: kubernetes/kubectl
+    jq: jqlang/jq
+# Native CI: auto-enabled on GitHub Actions (GITHUB_ACTIONS=true) -> job summary, step outputs, log groups
+ci:
+  enabled: true
+  summary:
+    enabled: true
+  output:
+    enabled: true
+  groups:
+    mode: auto
 logs:
   file: "/dev/stderr"
   level: Info

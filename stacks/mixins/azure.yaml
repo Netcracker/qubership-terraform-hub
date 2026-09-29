@@ -7,6 +7,7 @@ terraform:
   backend:
     azurerm:
       # must exist before first init
-      resource_group_name: CHANGE-ME-tfstate-rg
-      storage_account_name: changemetfstate
+      resource_group_name: rg-tfstate
+      storage_account_name: tfstate339411275
       container_name: tfstate
+      use_azuread_auth: true

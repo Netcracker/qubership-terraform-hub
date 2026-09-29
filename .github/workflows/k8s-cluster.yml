@@ -1,0 +1,121 @@
+name: Kubernetes Cluster (Atmos)
+
+# Create / update / scale / destroy a k8s cluster on AWS, Azure or GCP and install ArgoCD into it.
+# Orchestration lives in Atmos (stacks/workflows/k8s.yaml); plan/apply results land in the job summary via Atmos native CI.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider (stack = <cloud>-dev)"
+        type: choice
+        options: [aws, azure, gcp]
+        required: true
+      cluster_name:
+        description: "Cluster name (one Terraform workspace per cluster)"
+        type: string
+        required: true
+      action:
+        description: "plan = preview only; deploy = create/update/scale; destroy = delete cluster"
+        type: choice
+        options: [plan, deploy, destroy]
+        default: plan
+      argocd:
+        description: "Install/upgrade ArgoCD after deploy"
+        type: boolean
+        default: true
+      node_count:
+        description: "Scale: node count (GCP: per zone). Empty = stack default"
+        type: string
+        required: false
+      instance_type:
+        description: "Scale: node instance type. Empty = stack default"
+        type: string
+        required: false
+      environment:
+        description: "GitHub environment with the cloud secrets"
+        type: string
+        default: dev
+
+concurrency:
+  group: k8s-${{ inputs.cloud }}-${{ inputs.cluster_name }}
+  cancel-in-progress: false # cancelling terraform leaves a state lock
+
+jobs:
+  atmos:
+    runs-on: ubuntu-latest # ships aws/gcloud CLIs used by kubeconfig exec auth
+    environment: ${{ inputs.environment }}
+    env:
+      STACK: ${{ inputs.cloud }}-dev
+      CLUSTER_NAME: ${{ inputs.cluster_name }}
+      # Azure (used only when cloud=azure)
+      ARM_CLIENT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_ID || '' }}
+      ARM_CLIENT_SECRET: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_TENANT_ID || '' }}
+      ARM_SUBSCRIPTION_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_SUBSCRIPTION_ID || '' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Terraform, helm, helmfile, jq are installed by the Atmos toolchain from stack dependencies.tools
+      - name: Install Atmos
+        env:
+          ATMOS_VERSION: ${{ vars.ATMOS_VERSION || '1.230.0' }}
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/cloudposse/atmos/releases/download/v${ATMOS_VERSION}"
+          bin="atmos_${ATMOS_VERSION}_linux_amd64"
+          curl -fsSLO "$base/$bin"
+          curl -fsSL "$base/atmos_${ATMOS_VERSION}_SHA256SUMS" | grep " ${bin}$" | sha256sum -c -
+          sudo install -m 0755 "$bin" /usr/local/bin/atmos
+          atmos version
+
+      - name: Configure AWS credentials
+        if: inputs.cloud == 'aws'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Configure GCP credentials
+        if: inputs.cloud == 'gcp'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Install gke-gcloud-auth-plugin
+        if: inputs.cloud == 'gcp' && inputs.action != 'plan'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin
+
+      - name: Prepare env
+        env:
+          NODE_COUNT: ${{ inputs.node_count }}
+          INSTANCE_TYPE: ${{ inputs.instance_type }}
+        run: |
+          # Written by `atmos workflow kubeconfig`, outside the workspace
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+          # Exported only when set: an empty value would override the stack default
+          if [ -n "$NODE_COUNT" ]; then echo "NODE_COUNT=$NODE_COUNT" >> "$GITHUB_ENV"; fi
+          if [ -n "$INSTANCE_TYPE" ]; then echo "INSTANCE_TYPE=$INSTANCE_TYPE" >> "$GITHUB_ENV"; fi
+
+      - name: Plan
+        if: inputs.action == 'plan'
+        run: atmos terraform plan k8s-cluster -s "$STACK"
+
+      - name: Deploy cluster
+        if: inputs.action == 'deploy'
+        run: atmos workflow deploy-cluster -f k8s -s "$STACK"
+
+      - name: Deploy ArgoCD
+        if: inputs.action == 'deploy' && inputs.argocd
+        run: atmos workflow deploy-argocd -f k8s -s "$STACK"
+
+      - name: Destroy
+        if: inputs.action == 'destroy'
+        run: atmos workflow destroy -f k8s -s "$STACK"

@@ -67,6 +67,15 @@ Documentation for individual tool/script can be found in docs folder, contents a
    ```
    Credentials come from the usual env vars (`AWS_*`, `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_PROJECT`, `ARM_*`). Before first use of GCP/Azure, set the state bucket / storage account in `stacks/mixins/gcp.yaml` / `stacks/mixins/azure.yaml`.
 
+   Full cluster + [ArgoCD](components/helmfile/argocd) lifecycle is in [stacks/workflows/k8s.yaml](stacks/workflows/k8s.yaml); Terraform/helm/helmfile are installed by the Atmos toolchain:
+   ```bash
+   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig
+   NODE_COUNT=4 atmos workflow deploy-cluster -f k8s -s aws-dev   # create / update / scale
+   atmos workflow deploy-argocd -f k8s -s aws-dev                 # install / upgrade ArgoCD
+   atmos workflow destroy -f k8s -s aws-dev
+   ```
+   In GitHub use the **Kubernetes Cluster (Atmos)** workflow ([k8s-cluster.yml](.github/workflows/k8s-cluster.yml)). Secrets per cloud: `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`; `GCP_CREDENTIALS` (service account JSON); `ARM_CLIENT_ID`/`ARM_CLIENT_SECRET`/`ARM_TENANT_ID`/`ARM_SUBSCRIPTION_ID`.
+
 ---
 
 ## 📘 Standards & Change Policy

@@ -8,7 +8,7 @@ variable "cluster_name" {
 
 resource "null_resource" "delete_storage_class" {
   provisioner "local-exec" {
-    command = "kubectl delete storageclass gp2"
+    command = "kubectl delete storageclass gp2 --ignore-not-found"
   }
 }
 

@@ -1,0 +1,14 @@
+# .Values = component vars from the stack (stacks/catalog/argocd.yaml), passed by Atmos as a state-values file
+repositories:
+  - name: argo
+    url: https://argoproj.github.io/argo-helm
+
+releases:
+  - name: argocd
+    namespace: {{ .Values.namespace }}
+    createNamespace: true
+    chart: argo/argo-cd
+    version: {{ .Values.chart_version | quote }}
+    wait: true
+    values:
+      - {{ .Values.values | toYaml | nindent 8 }}
