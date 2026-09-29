@@ -1,7 +1,7 @@
 name: Atmos setup
 description: >-
   Installs Atmos and signs in to the cloud of the stack, so `atmos` commands (terraform, helmfile, kubeconfig exec auth) work.
-  Terraform, helm, helmfile, kubectl, jq come from the Atmos toolchain.
+  Terraform, helm, helmfile, kubectl, jq come from the Atmos toolchain and are cached between runs with Terraform providers.
 inputs:
   cloud:
     description: aws | azure | gcp
@@ -50,6 +50,22 @@ runs:
         atmos version
         # Written by `atmos workflow kubeconfig`, outside the workspace
         echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+    # One cache per cloud (each has its own Terraform providers); a new key when tool or provider versions may change.
+    # ponytail: providers are pinned with `~>` and no lock file, so a new provider patch is re-downloaded on every run
+    # until one of the hashed files changes; commit .terraform.lock.hcl and hash it if that matters.
+    - name: Atmos cache key
+      shell: bash
+      env:
+        PREFIX: atmos-${{ runner.os }}-${{ inputs.cloud }}-
+        VERSIONS: ${{ hashFiles('atmos.yaml', 'stacks/catalog/defaults.yaml', 'stacks/workflows/**', 'components/terraform/**/*.tf') }}
+      run: |
+        echo "ATMOS_CACHE_KEY=${PREFIX}${VERSIONS}" >> "$GITHUB_ENV"
+        echo "ATMOS_CACHE_RESTORE_KEY=${PREFIX}" >> "$GITHUB_ENV"
+
+    # Restores the Atmos cache root (ci.cache in atmos.yaml) now and saves it in the post step at job end
+    - name: Atmos cache
+      uses: cloudposse/atmos/actions/cache@e4269500304cba367d6a204ba3901c539ca943fc # v1.230.0
 
     - name: Configure AWS credentials
       if: inputs.cloud == 'aws'

@@ -42,6 +42,14 @@ ci:
     enabled: true
   groups:
     mode: auto
+  # Caches the Atmos cache root: toolchain (terraform, helm, helmfile, kubectl, jq), helm plugins and the Terraform
+  # provider plugin cache. Restored/saved by cloudposse/atmos/actions/cache in .github/actions/atmos-setup, which
+  # also sets the key (OS + cloud + versions); the local defaults only matter outside CI.
+  cache:
+    enabled: true
+    key: !env ATMOS_CACHE_KEY atmos-local
+    restore_keys:
+      - !env ATMOS_CACHE_RESTORE_KEY atmos-local-
 logs:
   file: "/dev/stderr"
   level: Info
