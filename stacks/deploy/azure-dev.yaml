@@ -34,4 +34,4 @@ components:
             service:
               type: LoadBalancer
               annotations:
-                service.beta.kubernetes.io/azure-load-balancer-ipv4: !terraform.state k8s-cluster ingress_ip
+                service.beta.kubernetes.io/azure-load-balancer-ipv4: !terraform.output k8s-cluster ingress_ip
