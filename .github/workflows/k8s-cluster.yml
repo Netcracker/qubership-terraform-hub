@@ -49,11 +49,6 @@ jobs:
     env:
       STACK: ${{ inputs.cloud }}-dev
       CLUSTER_NAME: ${{ inputs.cluster_name }}
-      # Azure (used only when cloud=azure)
-      ARM_CLIENT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_ID || '' }}
-      ARM_CLIENT_SECRET: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_SECRET || '' }}
-      ARM_TENANT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_TENANT_ID || '' }}
-      ARM_SUBSCRIPTION_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_SUBSCRIPTION_ID || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout Code
@@ -70,6 +65,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
           gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
       - name: Scaling overrides
         env:
