@@ -32,6 +32,15 @@ releases:
     disableValidationOnInstall: {{ ne (toString ($app | get "disableValidationOnInstall" true)) "false" }}
     wait: true
     timeout: 900
+    # Operators (e.g. kafka) leave their workloads without ownerReferences, so `helm uninstall` orphans them.
+    # Once the last release of the namespace is gone, drop the namespace with everything left in it (PVCs too).
+    hooks:
+      - events: [postuninstall]
+        showlogs: true
+        command: sh
+        args:
+          - -c
+          - helm list -a -q -n {{ $app.namespace }} | grep -q . || kubectl delete namespace {{ $app.namespace }} --ignore-not-found --timeout=10m
     missingFileHandler: Debug
     values:
       - values/{{ $key }}.yaml

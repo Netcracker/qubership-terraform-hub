@@ -3,7 +3,7 @@
 #   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig APPS=kafka,postgres
 #   atmos workflow diff-apps    -f apps -s aws-dev
 #   atmos workflow deploy-apps  -f apps -s aws-dev
-#   atmos workflow destroy-apps -f apps -s aws-dev   # only the listed apps, not their dependencies
+#   atmos workflow destroy-apps -f apps -s aws-dev   # listed apps with their namespaces and volumes, not their dependencies
 # `--selector` goes after `--`: it is a persistent helmfile flag, and atmos does not forward --global-options everywhere
 workflows:
   diff-apps:
@@ -27,11 +27,12 @@ workflows:
           helmfile apply apps
           -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}--include-needs --suppress CustomResourceDefinition --suppress-secrets --context 3
 
+  # --deleteWait: CRs are fully deleted (finalizers run) before their operator goes
   destroy-apps:
-    description: Uninstall apps (PVCs are kept)
+    description: Uninstall apps; their namespaces (with volumes) go with the last release
     steps:
       - name: kubeconfig
         command: workflow kubeconfig -f k8s
       - name: destroy
         command: >-
-          helmfile destroy apps -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}
+          helmfile destroy apps -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}--deleteWait --deleteTimeout 600
