@@ -12,11 +12,22 @@ zooKeeper:
   replicas: 3
   storage:
     size: 5Gi
+    # Without a class the operator falls back to emptyDir and ZooKeeper data is lost on pod restart
+    className:
+      - default-rwo
   quorumAuthEnabled: true
+  # Image runs as USER 1000:0; fsGroup makes its data volume writable
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
 monitoring:
   install: false
 backupDaemon:
   install: true
+  # Image runs as USER 1000:0; without fsGroup it can't write its SQLite DB to the fresh volume (SQLITE_CANTOPEN)
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
   backupStorage:
     persistentVolumeType: standalone
     storageClass: default-rwo
