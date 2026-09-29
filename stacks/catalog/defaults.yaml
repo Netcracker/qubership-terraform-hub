@@ -1,0 +1,5 @@
+# Installed on demand by the Atmos toolchain for every terraform component
+terraform:
+  dependencies:
+    tools:
+      terraform: "1.12.2"

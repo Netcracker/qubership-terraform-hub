@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "atmos": {
+      "args": [
+        "mcp",
+        "start"
+      ],
+      "command": "atmos"
+    }
+  }
+}

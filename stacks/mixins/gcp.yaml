@@ -1,0 +1,9 @@
+# Credentials: GOOGLE_APPLICATION_CREDENTIALS (or gcloud ADC) + GOOGLE_PROJECT env vars
+vars:
+  cloud: gcp
+
+terraform:
+  backend_type: gcs
+  backend:
+    gcs:
+      bucket: CHANGE-ME-terraform-state # must exist before first init

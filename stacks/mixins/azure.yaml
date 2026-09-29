@@ -1,0 +1,13 @@
+# Credentials: ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID / ARM_SUBSCRIPTION_ID env vars (or az login)
+vars:
+  cloud: azure
+
+terraform:
+  backend_type: azurerm
+  backend:
+    azurerm:
+      # must exist before first init
+      resource_group_name: rg-tfstate
+      storage_account_name: tfstate339411275
+      container_name: tfstate
+      use_azuread_auth: true

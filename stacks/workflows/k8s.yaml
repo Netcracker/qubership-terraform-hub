@@ -1,0 +1,56 @@
+# Cluster + ArgoCD lifecycle for any cloud stack (aws-dev | azure-dev | gcp-dev).
+#   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig
+#   atmos workflow deploy-cluster -f k8s -s aws-dev   # create / update / scale (NODE_COUNT, INSTANCE_TYPE)
+#   atmos workflow deploy-argocd  -f k8s -s aws-dev   # install / upgrade ArgoCD
+#   atmos workflow destroy        -f k8s -s aws-dev
+# KUBECONFIG is overwritten with the cluster's kubeconfig (exec auth needs aws CLI on AWS, gke-gcloud-auth-plugin on GCP).
+workflows:
+  kubeconfig:
+    description: Write the k8s-cluster `kubeconfig` output to $KUBECONFIG
+    dependencies:
+      tools:
+        jq: "1.8.1"
+    steps:
+      - name: require-env
+        type: shell
+        command: test -n "$KUBECONFIG" || { echo "KUBECONFIG is not set" >&2; exit 1; }
+      - name: outputs
+        command: terraform output k8s-cluster --format json -o {{ .Env.KUBECONFIG }}.outputs.json
+      - name: write
+        type: shell
+        command: jq -er .kubeconfig "$KUBECONFIG.outputs.json" > "$KUBECONFIG" && rm -f "$KUBECONFIG.outputs.json"
+
+  deploy-cluster:
+    description: Create, update or scale the cluster (plan + apply)
+    steps:
+      - name: cluster
+        command: terraform deploy k8s-cluster
+      # EKS only: replace the default gp2 StorageClass
+      - name: kubeconfig
+        when: !cel 'stack.startsWith("aws-")'
+        command: workflow kubeconfig -f k8s
+      - name: storage-class
+        when: !cel 'stack.startsWith("aws-")'
+        command: terraform deploy storage-class
+
+  deploy-argocd:
+    description: Install or upgrade ArgoCD in the cluster
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      - name: argocd
+        command: helmfile apply argocd
+
+  destroy:
+    description: Destroy ArgoCD and the cluster
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      # Releases the LoadBalancer first, otherwise its public IP can't be deleted
+      - name: argocd
+        command: helmfile destroy argocd
+      - name: storage-class
+        when: !cel 'stack.startsWith("aws-")'
+        command: terraform destroy storage-class -auto-approve
+      - name: cluster
+        command: terraform destroy k8s-cluster -auto-approve

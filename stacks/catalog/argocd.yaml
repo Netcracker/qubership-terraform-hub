@@ -1,0 +1,19 @@
+# ArgoCD for any k8s-cluster; needs KUBECONFIG (see `atmos workflow deploy-argocd -f k8s`)
+components:
+  helmfile:
+    argocd:
+      dependencies:
+        tools:
+          helmfile: "1.8.0"
+          helm: "3.22.0"
+      # helm-diff is required by `helmfile diff/apply`
+      plugins:
+        - diff@v3.15.15
+      vars:
+        namespace: argocd
+        chart_version: "10.9.2"
+        # Passed as-is to the argo-cd chart: https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+        values:
+          configs:
+            params:
+              server.insecure: true # TLS is expected to be terminated in front of argocd-server
