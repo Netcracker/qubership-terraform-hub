@@ -1,4 +1,6 @@
 name: Kubernetes Cluster (Atmos)
+run-name: >-
+  ${{ inputs.action }} ${{ inputs.cluster_name }} @ ${{ inputs.cloud }} (${{ inputs.environment }})${{ inputs.node_count && format(' nodes={0}', inputs.node_count) || '' }}${{ inputs.instance_type && format(' type={0}', inputs.instance_type) || '' }}
 
 # Create / update / scale / destroy a k8s cluster on AWS, Azure or GCP. Every cloud gets the same baseline
 # (StorageClass default-rwo, cert-manager); apps are deployed separately by k8s-apps.yml.
@@ -51,6 +53,22 @@ jobs:
       CLUSTER_NAME: ${{ inputs.cluster_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      # First step, so failed runs show their inputs too
+      - name: Run parameters
+        env:
+          INPUTS: ${{ toJSON(inputs) }}
+          ACTOR: ${{ github.triggering_actor }}
+          REF: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## Run parameters"
+            echo "| Parameter | Value |"
+            echo "|---|---|"
+            jq -r 'to_entries[] | "| \(.key) | \(if .value == "" then "—" else "`\(.value)`" end) |"' <<< "$INPUTS"
+            echo "| started by | \`$ACTOR\` |"
+            echo "| ref | \`$REF\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
