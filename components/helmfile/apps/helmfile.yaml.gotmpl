@@ -27,6 +27,9 @@ releases:
       - {{ $dep.namespace }}/{{ $dep | get "release" . }}
       {{- end }}
     {{- end }}
+    # First install: the chart's CRDs (crds/ or a needed operator release) don't exist yet, so helm-diff can't
+    # validate its CRs against the cluster. Installed releases are still validated.
+    disableValidationOnInstall: {{ ne (toString ($app | get "disableValidationOnInstall" true)) "false" }}
     wait: true
     timeout: 900
     missingFileHandler: Debug
