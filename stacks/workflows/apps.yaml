@@ -1,0 +1,37 @@
+# Apps on an existing cluster (registry: stacks/catalog/apps.yaml). APPS = comma-separated app keys or `all`;
+# dependencies (`needs`) are deployed automatically.
+#   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig APPS=kafka,postgres
+#   atmos workflow diff-apps    -f apps -s aws-dev
+#   atmos workflow deploy-apps  -f apps -s aws-dev
+#   atmos workflow destroy-apps -f apps -s aws-dev   # only the listed apps, not their dependencies
+# `--selector` goes after `--`: it is a persistent helmfile flag, and atmos does not forward --global-options everywhere
+workflows:
+  diff-apps:
+    description: Show what deploy-apps would change
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      - name: diff
+        command: >-
+          helmfile diff apps
+          -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}--include-needs --suppress CustomResourceDefinition --suppress-secrets --context 3
+
+  deploy-apps:
+    description: Install or upgrade apps and their dependencies
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      # CRDs are ~1.8MB of diff on first install and overflow the 1MB GitHub job summary; secrets must not leak into it
+      - name: apply
+        command: >-
+          helmfile apply apps
+          -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}--include-needs --suppress CustomResourceDefinition --suppress-secrets --context 3
+
+  destroy-apps:
+    description: Uninstall apps (PVCs are kept)
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      - name: destroy
+        command: >-
+          helmfile destroy apps -- {{ if ne .Env.APPS "all" }}{{ range splitList "," .Env.APPS }}--selector app={{ trim . }} {{ end }}{{ end }}

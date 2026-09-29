@@ -1,6 +1,7 @@
 name: Kubernetes Cluster (Atmos)
 
-# Create / update / scale / destroy a k8s cluster on AWS, Azure or GCP and install ArgoCD into it.
+# Create / update / scale / destroy a k8s cluster on AWS, Azure or GCP. Every cloud gets the same baseline
+# (StorageClass default-rwo, cert-manager); apps are deployed separately by k8s-apps.yml.
 # Orchestration lives in Atmos (stacks/workflows/k8s.yaml); plan/apply results land in the job summary via Atmos native CI.
 
 permissions:
@@ -19,14 +20,10 @@ on:
         type: string
         required: true
       action:
-        description: "plan = preview only; deploy = create/update/scale; destroy = delete cluster"
+        description: "plan = preview only; deploy = create/update/scale; destroy = delete apps, volumes and cluster"
         type: choice
         options: [plan, deploy, destroy]
         default: plan
-      argocd:
-        description: "Install/upgrade ArgoCD after deploy"
-        type: boolean
-        default: true
       node_count:
         description: "Scale: node count (GCP: per zone). Empty = stack default"
         type: string
@@ -40,22 +37,18 @@ on:
         type: string
         default: dev
 
+# Shared with k8s-apps.yml: never touch apps while the cluster changes
 concurrency:
   group: k8s-${{ inputs.cloud }}-${{ inputs.cluster_name }}
   cancel-in-progress: false # cancelling terraform leaves a state lock
 
 jobs:
   atmos:
-    runs-on: ubuntu-latest # ships aws/gcloud CLIs used by kubeconfig exec auth
+    runs-on: ubuntu-latest # ships the aws CLI used by EKS kubeconfig exec auth
     environment: ${{ inputs.environment }}
     env:
       STACK: ${{ inputs.cloud }}-dev
       CLUSTER_NAME: ${{ inputs.cluster_name }}
-      # Azure (used only when cloud=azure)
-      ARM_CLIENT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_ID || '' }}
-      ARM_CLIENT_SECRET: ${{ inputs.cloud == 'azure' && secrets.ARM_CLIENT_SECRET || '' }}
-      ARM_TENANT_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_TENANT_ID || '' }}
-      ARM_SUBSCRIPTION_ID: ${{ inputs.cloud == 'azure' && secrets.ARM_SUBSCRIPTION_ID || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout Code
@@ -63,44 +56,25 @@ jobs:
         with:
           persist-credentials: false
 
-      # Terraform, helm, helmfile, jq are installed by the Atmos toolchain from stack dependencies.tools
-      - name: Install Atmos
-        env:
-          ATMOS_VERSION: ${{ vars.ATMOS_VERSION || '1.230.0' }}
-        run: |
-          cd "$RUNNER_TEMP"
-          base="https://github.com/cloudposse/atmos/releases/download/v${ATMOS_VERSION}"
-          bin="atmos_${ATMOS_VERSION}_linux_amd64"
-          curl -fsSLO "$base/$bin"
-          curl -fsSL "$base/atmos_${ATMOS_VERSION}_SHA256SUMS" | grep " ${bin}$" | sha256sum -c -
-          sudo install -m 0755 "$bin" /usr/local/bin/atmos
-          atmos version
-
-      - name: Configure AWS credentials
-        if: inputs.cloud == 'aws'
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Atmos setup
+        uses: $/.github/actions/atmos-setup
         with:
+          cloud: ${{ inputs.cloud }}
+          atmos-version: ${{ vars.ATMOS_VERSION || '1.230.0' }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
-      - name: Configure GCP credentials
-        if: inputs.cloud == 'gcp'
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-
-      - name: Install gke-gcloud-auth-plugin
-        if: inputs.cloud == 'gcp' && inputs.action != 'plan'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin
-
-      - name: Prepare env
+      - name: Scaling overrides
         env:
           NODE_COUNT: ${{ inputs.node_count }}
           INSTANCE_TYPE: ${{ inputs.instance_type }}
         run: |
-          # Written by `atmos workflow kubeconfig`, outside the workspace
-          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
           # Exported only when set: an empty value would override the stack default
           if [ -n "$NODE_COUNT" ]; then echo "NODE_COUNT=$NODE_COUNT" >> "$GITHUB_ENV"; fi
           if [ -n "$INSTANCE_TYPE" ]; then echo "INSTANCE_TYPE=$INSTANCE_TYPE" >> "$GITHUB_ENV"; fi
@@ -109,38 +83,9 @@ jobs:
         if: inputs.action == 'plan'
         run: atmos terraform plan k8s-cluster -s "$STACK"
 
-      - name: Deploy cluster
+      - name: Deploy cluster and baseline
         if: inputs.action == 'deploy'
         run: atmos workflow deploy-cluster -f k8s -s "$STACK"
-
-      - name: Deploy ArgoCD
-        if: inputs.action == 'deploy' && inputs.argocd
-        env:
-          # Optional; empty = ArgoCD generates argocd-initial-admin-secret
-          ARGOCD_ADMIN_PASSWORD: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
-        run: atmos workflow deploy-argocd -f k8s -s "$STACK"
-
-      # Public repo: never print the password itself, only where to find it
-      - name: ArgoCD access summary
-        if: inputs.action == 'deploy' && inputs.argocd
-        env:
-          HAS_PASSWORD: ${{ secrets.ARGOCD_ADMIN_PASSWORD != '' }}
-        run: |
-          addr=$(kubectl -n argocd get svc argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}')
-          {
-            echo "## ArgoCD"
-            if [ -n "$addr" ]; then
-              echo "- URL: https://$addr (self-signed certificate)"
-            else
-              echo "- URL: not exposed, use \`kubectl -n argocd port-forward svc/argocd-server 8080:80\` and http://localhost:8080"
-            fi
-            echo "- User: \`admin\`"
-            if [ "$HAS_PASSWORD" = true ]; then
-              echo "- Password: GitHub secret \`ARGOCD_ADMIN_PASSWORD\`"
-            else
-              echo "- Password: generated, \`kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d\`"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Destroy
         if: inputs.action == 'destroy'

@@ -1,8 +1,7 @@
-# Cluster + ArgoCD lifecycle for any cloud stack (aws-dev | azure-dev | gcp-dev).
+# Cluster lifecycle, identical for every cloud stack (aws-dev | azure-dev | gcp-dev). Apps: stacks/workflows/apps.yaml.
 #   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig
-#   atmos workflow deploy-cluster -f k8s -s aws-dev   # create / update / scale (NODE_COUNT, INSTANCE_TYPE)
-#   atmos workflow deploy-argocd  -f k8s -s aws-dev   # install / upgrade ArgoCD
-#   atmos workflow destroy        -f k8s -s aws-dev
+#   atmos workflow deploy-cluster -f k8s -s aws-dev   # create / update / scale (NODE_COUNT, INSTANCE_TYPE) + baseline
+#   atmos workflow destroy        -f k8s -s aws-dev   # apps, their volumes, baseline, cluster
 # KUBECONFIG is overwritten with the cluster's kubeconfig (exec auth needs aws CLI on AWS, gke-gcloud-auth-plugin on GCP).
 workflows:
   kubeconfig:
@@ -21,37 +20,33 @@ workflows:
         command: jq -er .kubeconfig "$KUBECONFIG.outputs.json" > "$KUBECONFIG" && rm -f "$KUBECONFIG.outputs.json"
 
   deploy-cluster:
-    description: Create, update or scale the cluster (plan + apply)
+    description: Create, update or scale the cluster and apply the cluster baseline
     steps:
       - name: cluster
         command: terraform deploy k8s-cluster
-      # EKS only: replace the default gp2 StorageClass
-      - name: kubeconfig
-        when: !cel 'stack.startsWith("aws-")'
-        command: workflow kubeconfig -f k8s
-      - name: storage-class
-        when: !cel 'stack.startsWith("aws-")'
-        command: terraform deploy storage-class
-
-  deploy-argocd:
-    description: Install or upgrade ArgoCD in the cluster
-    steps:
       - name: kubeconfig
         command: workflow kubeconfig -f k8s
-      # CRDs are ~1.8MB of diff on first install and overflow the 1MB GitHub job summary; secrets must not leak into it
-      - name: argocd
-        command: helmfile apply argocd -- --suppress CustomResourceDefinition --suppress-secrets --context 3
+      - name: baseline
+        command: helmfile apply cluster-base -- --suppress CustomResourceDefinition --suppress-secrets --context 3
 
   destroy:
-    description: Destroy ArgoCD and the cluster
+    description: Destroy apps, their volumes, the baseline and the cluster
+    dependencies:
+      tools:
+        kubectl: "1.33.0"
     steps:
       - name: kubeconfig
         command: workflow kubeconfig -f k8s
-      # Releases the LoadBalancer first, otherwise its public IP can't be deleted
-      - name: argocd
-        command: helmfile destroy argocd
-      - name: storage-class
-        when: !cel 'stack.startsWith("aws-")'
-        command: terraform destroy storage-class -auto-approve
+      # Releases LoadBalancers first, otherwise their public IPs can't be deleted
+      - name: apps
+        command: helmfile destroy apps
+      # StatefulSet PVCs outlive `helm uninstall`; their disks would leak on AWS/GCP once the cluster is gone
+      - name: volumes
+        type: shell
+        command: |
+          kubectl delete pvc --all --all-namespaces --wait=false
+          if kubectl get pv -o name | grep -q .; then kubectl wait --for=delete pv --all --timeout=10m; fi
+      - name: baseline
+        command: helmfile destroy cluster-base
       - name: cluster
         command: terraform destroy k8s-cluster -auto-approve

@@ -1,0 +1,37 @@
+# All apps as one helmfile; the registry (chart, version, namespace, needs) is in stacks/catalog/apps.yaml.
+# Values per app: values/<app>.yaml and/or values/<app>.yaml.gotmpl (env available), then stack overrides (`values`).
+# Pick apps with `--selector app=<name>`; `--include-needs` pulls their dependencies in the right order.
+{{- $apps := .Values.apps }}
+repositories:
+{{- range $name, $url := .Values.repositories }}
+  - name: {{ $name }}
+    url: {{ $url }}
+{{- end }}
+
+releases:
+{{- range $key, $app := $apps }}
+  - name: {{ $app | get "release" $key }}
+    namespace: {{ $app.namespace }}
+    createNamespace: true
+    chart: {{ $app.chart }}
+    {{- with $app | get "version" "" }}
+    version: {{ . | quote }}
+    {{- end }}
+    installed: {{ ne (toString ($app | get "installed" true)) "false" }}
+    labels:
+      app: {{ $app | get "app" $key }}
+    {{- with $app | get "needs" (list) }}
+    needs:
+      {{- range . }}
+      {{- $dep := index $apps . }}
+      - {{ $dep.namespace }}/{{ $dep | get "release" . }}
+      {{- end }}
+    {{- end }}
+    wait: true
+    timeout: 900
+    missingFileHandler: Debug
+    values:
+      - values/{{ $key }}.yaml
+      - values/{{ $key }}.yaml.gotmpl
+      - {{ $app | get "values" (dict) | toYaml | nindent 8 }}
+{{- end }}

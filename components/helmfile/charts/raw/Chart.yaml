@@ -1,0 +1,4 @@
+apiVersion: v2
+name: raw
+description: Renders plain manifests from .Values.manifests (StorageClass, operator CRs, ...)
+version: 1.0.0

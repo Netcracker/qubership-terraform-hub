@@ -1,0 +1,28 @@
+global:
+  name: kafka
+  tls:
+    enabled: false
+  secrets:
+    kafka:
+      disableSecurity: true
+      zookeeperClientUsername: "zclient"
+      zookeeperClientPassword: "zclient"
+kafka:
+  install: true
+  securityContext: {
+    "runAsUser": 1001,
+    "fsGroup": 1001
+  }  
+  storage:
+    size: 1Gi
+    className:
+      - default-rwo
+  zookeeperConnect: zookeeper.zookeeper:2181
+  enableAuditLogs: false
+  enableAuthorization: false
+  tls:
+    enabled: false
+  kraft:
+    enabled: false
+    migration: false
+    migrationTimeout: 600

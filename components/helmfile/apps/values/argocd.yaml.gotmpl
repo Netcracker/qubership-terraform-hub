@@ -1,0 +1,14 @@
+# argo-cd chart values: https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+configs:
+  params:
+    server.insecure: false # exposed via LoadBalancer: argocd-server serves HTTPS itself (self-signed cert)
+{{- with env "ARGOCD_ADMIN_PASSWORD" }}
+  # Admin password from env (bcrypt); without it ArgoCD generates argocd-initial-admin-secret
+  secret:
+    argocdServerAdminPassword: {{ htpasswd "admin" . | trimPrefix "admin:" | quote }}
+    # Fixed, otherwise the chart stamps `now` and every apply logs all sessions out
+    argocdServerAdminPasswordMtime: "2026-01-01T00:00:00Z"
+{{- end }}
+server:
+  service:
+    type: LoadBalancer
