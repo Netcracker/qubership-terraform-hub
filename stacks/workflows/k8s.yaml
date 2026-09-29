@@ -39,7 +39,7 @@ workflows:
         command: workflow kubeconfig -f k8s
       # Releases LoadBalancers first, otherwise their public IPs can't be deleted
       - name: apps
-        command: helmfile destroy apps
+        command: helmfile destroy apps -- --deleteWait --deleteTimeout 600
       # StatefulSet PVCs outlive `helm uninstall`; their disks would leak on AWS/GCP once the cluster is gone
       - name: volumes
         type: shell
