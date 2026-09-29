@@ -1,0 +1,33 @@
+base_path: "."
+components:
+  terraform:
+    # One folder per cloud: aws/, gcp/, azure/
+    base_path: "components/terraform"
+    apply_auto_approve: false
+    deploy_run_init: true
+    init_run_reconfigure: true
+    # Backend (s3 / gcs / azurerm) comes from stacks/mixins/<cloud>.yaml
+    auto_generate_backend_file: true
+stacks:
+  base_path: "stacks"
+  included_paths:
+    - "deploy/**/*"
+  name_template: "{{ .vars.cloud }}-{{ .vars.stage }}"
+# Needed for metadata.terraform_workspace: '{{ env "CLUSTER_NAME" }}' in stacks
+templates:
+  settings:
+    enabled: true
+    sprig:
+      enabled: true
+logs:
+  file: "/dev/stderr"
+  level: Info
+mcp:
+  enabled: true
+  servers:
+    atmos:
+      command: atmos
+      args:
+        - mcp
+        - start
+      description: Atmos's own AI tools (describe, list, validate, ...) exposed via MCP

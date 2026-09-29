@@ -1,5 +1,9 @@
-variable "EKS_NEW_CLUSTERNAME" {
+variable "cluster_name" {
   type        = string
+  validation {
+    condition     = length(var.cluster_name) > 0
+    error_message = "cluster_name is empty: set CLUSTER_NAME env var."
+  }
 }
 
 resource "null_resource" "delete_storage_class" {
@@ -23,6 +27,6 @@ resource "kubernetes_storage_class" "aws-ebs-csi-gp2-storage-class" {
   parameters = {
     type      = "gp2"
     fsType    = "ext4"
-    tagSpecification_1 = "cost-usage=${var.EKS_NEW_CLUSTERNAME}"
+    tagSpecification_1 = "cost-usage=${var.cluster_name}"
   }
 }

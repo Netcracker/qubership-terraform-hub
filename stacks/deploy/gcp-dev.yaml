@@ -1,0 +1,21 @@
+# Usage: CLUSTER_NAME=<name> atmos terraform plan k8s-cluster -s gcp-dev
+import:
+  - mixins/gcp
+
+vars:
+  stage: dev
+  cluster_name: !env CLUSTER_NAME
+
+components:
+  terraform:
+    k8s-cluster:
+      metadata:
+        component: gcp/k8s-cluster
+        terraform_workspace: '{{ env "CLUSTER_NAME" | default "CLUSTER_NAME-not-set" }}'
+      backend:
+        gcs:
+          prefix: k8s-cluster
+      vars:
+        region: us-east1
+        instance_type: e2-standard-2
+        node_count: 1 # per zone -> 3 nodes

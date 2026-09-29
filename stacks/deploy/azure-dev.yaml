@@ -1,0 +1,21 @@
+# Usage: CLUSTER_NAME=<name> atmos terraform plan k8s-cluster -s azure-dev
+import:
+  - mixins/azure
+
+vars:
+  stage: dev
+  cluster_name: !env CLUSTER_NAME
+
+components:
+  terraform:
+    k8s-cluster:
+      metadata:
+        component: azure/k8s-cluster
+        terraform_workspace: '{{ env "CLUSTER_NAME" | default "CLUSTER_NAME-not-set" }}'
+      backend:
+        azurerm:
+          key: k8s-cluster.tfstate
+      vars:
+        region: eastus
+        instance_type: Standard_D2s_v5
+        node_count: 3

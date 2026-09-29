@@ -10,7 +10,7 @@ A set of tools and scripts to install and manage various resources in AWS and Ku
 - Scheduled start/stop of EC2/EKS resources
 
 **🔑 Key pieces:**
-- `kubernetes-terraform` – Set of Terraform code for provisioning/deleting EKS cluster (Optional infrastructure components installation withing same workflow).
+- `components/terraform/<cloud>/k8s-cluster` – Terraform for provisioning/deleting a Kubernetes cluster in AWS (EKS), Google Cloud (GKE) or Azure (AKS), driven by [Atmos](https://atmos.tools) stacks in `stacks/` (see below).
 - `ec2-scheduled` - Terraform code for managing state of EC2 instances (and EKS autoscaling groups).
 - `Infrastructure components` - terraform and shell scripts to install supported infra components into EKS cluster.
 
@@ -57,6 +57,15 @@ Documentation for individual tool/script can be found in docs folder, contents a
    ```
 
    > **Note:** Consult the individual workflow docs for specific input parameters and examples.
+
+4. **Run locally with Atmos**
+   Stacks are `<cloud>-<stage>`: `aws-dev`, `gcp-dev`, `azure-dev`. Each cluster gets its own Terraform workspace (state), named after `CLUSTER_NAME`.
+   ```bash
+   export CLUSTER_NAME=my-cluster
+   atmos terraform plan k8s-cluster -s aws-dev    # or gcp-dev / azure-dev
+   atmos terraform apply k8s-cluster -s aws-dev
+   ```
+   Credentials come from the usual env vars (`AWS_*`, `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_PROJECT`, `ARM_*`). Before first use of GCP/Azure, set the state bucket / storage account in `stacks/mixins/gcp.yaml` / `stacks/mixins/azure.yaml`.
 
 ---
 
