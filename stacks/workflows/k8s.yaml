@@ -38,8 +38,9 @@ workflows:
     steps:
       - name: kubeconfig
         command: workflow kubeconfig -f k8s
+      # CRDs are ~1.8MB of diff on first install and overflow the 1MB GitHub job summary; secrets must not leak into it
       - name: argocd
-        command: helmfile apply argocd
+        command: helmfile apply argocd -- --suppress CustomResourceDefinition --suppress-secrets --context 3
 
   destroy:
     description: Destroy ArgoCD and the cluster

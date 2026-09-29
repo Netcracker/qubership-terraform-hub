@@ -12,3 +12,11 @@ releases:
     wait: true
     values:
       - {{ .Values.values | toYaml | nindent 8 }}
+{{- with env "ARGOCD_ADMIN_PASSWORD" }}
+      # Admin password from env (bcrypt); without it ArgoCD generates argocd-initial-admin-secret
+      - configs:
+          secret:
+            argocdServerAdminPassword: {{ htpasswd "admin" . | trimPrefix "admin:" | quote }}
+            # Fixed, otherwise the chart stamps `now` and every apply logs all sessions out
+            argocdServerAdminPasswordMtime: "2026-01-01T00:00:00Z"
+{{- end }}
