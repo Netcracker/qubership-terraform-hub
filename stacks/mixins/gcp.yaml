@@ -7,3 +7,13 @@ terraform:
   backend:
     gcs:
       bucket: CHANGE-ME-terraform-state # must exist before first init
+
+# The only cloud-specific part of the cluster baseline: CSI driver behind StorageClass default-rwo
+components:
+  helmfile:
+    cluster-base:
+      vars:
+        storage:
+          provisioner: pd.csi.storage.gke.io
+          parameters:
+            type: pd-balanced

@@ -1,0 +1,34 @@
+# Same cluster baseline on every cloud; only the CSI provisioner differs (stacks/mixins/<cloud>.yaml).
+# Apps rely on it: StorageClass `default-rwo` for PVCs, cert-manager for TLS.
+repositories:
+  - name: jetstack
+    url: https://charts.jetstack.io
+
+releases:
+  - name: storage-class
+    namespace: kube-system
+    chart: ../charts/raw
+    values:
+      - manifests:
+          - apiVersion: storage.k8s.io/v1
+            kind: StorageClass
+            metadata:
+              name: default-rwo
+              annotations:
+                # The newest default class wins, so this one takes over from the cloud's own default
+                storageclass.kubernetes.io/is-default-class: "true"
+            provisioner: {{ .Values.storage.provisioner }}
+            parameters: {{ .Values.storage.parameters | toYaml | nindent 14 }}
+            reclaimPolicy: Delete
+            allowVolumeExpansion: true
+            volumeBindingMode: WaitForFirstConsumer
+
+  - name: cert-manager
+    namespace: cert-manager
+    createNamespace: true
+    chart: jetstack/cert-manager
+    version: {{ .Values.cert_manager_version | quote }}
+    wait: true
+    values:
+      - crds:
+          enabled: true

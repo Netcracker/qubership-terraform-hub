@@ -1,1 +1,0 @@
-# Qubership Terraform Hub

@@ -2,7 +2,8 @@
 import:
   - mixins/gcp
   - catalog/defaults
-  - catalog/argocd
+  - catalog/cluster-base
+  - catalog/apps
 
 vars:
   stage: dev

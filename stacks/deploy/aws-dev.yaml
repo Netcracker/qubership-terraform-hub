@@ -2,7 +2,8 @@
 import:
   - mixins/aws
   - catalog/defaults
-  - catalog/argocd
+  - catalog/cluster-base
+  - catalog/apps
 
 vars:
   stage: dev
@@ -23,14 +24,3 @@ components:
         kubernetes_version: "1.33"
         instance_type: !env INSTANCE_TYPE m6i.large
         node_count: !env NODE_COUNT 3
-
-    # Replaces default gp2 StorageClass; needs KUBECONFIG for the cluster (see stacks/workflows/k8s.yaml)
-    storage-class:
-      metadata:
-        component: aws/storage-class
-        terraform_workspace: '{{ env "CLUSTER_NAME" | default "CLUSTER_NAME-not-set" }}'
-      env:
-        KUBE_CONFIG_PATH: !env KUBECONFIG
-      backend:
-        s3:
-          key: storage-class.tfstate

@@ -1,0 +1,60 @@
+name: Atmos setup
+description: >-
+  Installs Atmos and signs in to the cloud of the stack, so `atmos` commands (terraform, helmfile, kubeconfig exec auth) work.
+  Terraform, helm, helmfile, kubectl, jq come from the Atmos toolchain. Azure uses ARM_* env vars set by the caller.
+inputs:
+  cloud:
+    description: aws | azure | gcp
+    required: true
+  atmos-version:
+    description: Atmos release
+    default: 1.230.0
+  aws-access-key-id:
+    description: AWS credentials (cloud=aws)
+    default: ""
+  aws-secret-access-key:
+    description: AWS credentials (cloud=aws)
+    default: ""
+  aws-region:
+    description: AWS region (cloud=aws)
+    default: us-east-1
+  gcp-credentials:
+    description: Service account JSON (cloud=gcp)
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install Atmos
+      shell: bash
+      env:
+        ATMOS_VERSION: ${{ inputs.atmos-version }}
+      run: |
+        cd "$RUNNER_TEMP"
+        base="https://github.com/cloudposse/atmos/releases/download/v${ATMOS_VERSION}"
+        bin="atmos_${ATMOS_VERSION}_linux_amd64"
+        curl -fsSLO "$base/$bin"
+        curl -fsSL "$base/atmos_${ATMOS_VERSION}_SHA256SUMS" | grep " ${bin}$" | sha256sum -c -
+        sudo install -m 0755 "$bin" /usr/local/bin/atmos
+        atmos version
+        # Written by `atmos workflow kubeconfig`, outside the workspace
+        echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+    - name: Configure AWS credentials
+      if: inputs.cloud == 'aws'
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Configure GCP credentials
+      if: inputs.cloud == 'gcp'
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        credentials_json: ${{ inputs.gcp-credentials }}
+
+    # Kubeconfig of GKE authenticates through this plugin (aws CLI plays the same role on EKS and ships with the runner)
+    - name: Install gke-gcloud-auth-plugin
+      if: inputs.cloud == 'gcp'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin

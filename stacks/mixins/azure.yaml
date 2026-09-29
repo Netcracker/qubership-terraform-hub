@@ -11,3 +11,13 @@ terraform:
       storage_account_name: tfstate339411275
       container_name: tfstate
       use_azuread_auth: true
+
+# The only cloud-specific part of the cluster baseline: CSI driver behind StorageClass default-rwo
+components:
+  helmfile:
+    cluster-base:
+      vars:
+        storage:
+          provisioner: disk.csi.azure.com
+          parameters:
+            skuName: StandardSSD_LRS
