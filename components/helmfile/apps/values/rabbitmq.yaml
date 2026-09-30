@@ -26,8 +26,6 @@ global:
     fsGroup: 999
     runAsUser: 999
   disableRunAsNonRoot: false
-  disasterRecovery:
-    siteManagerApiGroup: "qubership.org"
 
 operator:
   resources:
@@ -40,7 +38,6 @@ operator:
   customLabels: {}
   securityContext: {}
   priorityClassName: ""
-  apiGroup: "qubership.org"
   pullPolicy: "Always"
   restartScheduler:
     dockerImage: bitnami/kubectl:latest
