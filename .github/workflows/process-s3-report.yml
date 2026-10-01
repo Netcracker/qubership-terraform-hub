@@ -438,21 +438,19 @@ jobs:
           body: |
             Hello,
 
-            The Allure report has been successfully generated for **${{ steps.parse_path.outputs.TEST_TYPE }}**.
+            The Allure report has been successfully generated for ${{ steps.parse_path.outputs.TEST_TYPE }}.
 
             Results:
 
-            | Metric | Value |
-            |---|---|
-            | Overall Status | ${{ steps.pass_rate.outputs.OVERALL_STATUS }} |
-            | Pass Rate | ${{ steps.pass_rate.outputs.PASS_RATE }} |
-            | Pass Rate (rounded) | ${{ steps.pass_rate.outputs.PASS_RATE_ROUNDED }} |
-            | Total Count | ${{ steps.pass_rate.outputs.TOTAL_TESTS }} |
-            | Passed Count | ${{ steps.pass_rate.outputs.PASSED_TESTS }} |
-            | Failed Count | ${{ steps.pass_rate.outputs.FAILED_TESTS }} |
-            | Skipped Count | ${{ steps.pass_rate.outputs.SKIPPED_TESTS }} |
-            | Failure Rate | ${{ steps.pass_rate.outputs.FAILURE_RATE }} |
-            | Coverage | ${{ steps.pass_rate.outputs.COVERAGE }} |
+            Overall Status: ${{ steps.pass_rate.outputs.OVERALL_STATUS }}
+            Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}
+            Pass Rate (rounded): ${{ steps.pass_rate.outputs.PASS_RATE_ROUNDED }}
+            Total Count: ${{ steps.pass_rate.outputs.TOTAL_TESTS }}
+            Passed Count: ${{ steps.pass_rate.outputs.PASSED_TESTS }}
+            Failed Count: ${{ steps.pass_rate.outputs.FAILED_TESTS }}
+            Skipped Count: ${{ steps.pass_rate.outputs.SKIPPED_TESTS }}
+            Failure Rate: ${{ steps.pass_rate.outputs.FAILURE_RATE }}
+            Coverage: ${{ steps.pass_rate.outputs.COVERAGE }}
 
             DOWNLOAD LINKS:
             Single report file: ${{ env.SINGLE_URL }}
