@@ -1,6 +1,9 @@
 # Usage: CLUSTER_NAME=<name> atmos terraform plan k8s-cluster -s azure-dev
 import:
   - mixins/azure
+  - catalog/defaults
+  - catalog/cluster-base
+  - catalog/apps
 
 vars:
   stage: dev
@@ -17,5 +20,17 @@ components:
           key: k8s-cluster.tfstate
       vars:
         region: eastus
-        instance_type: Standard_D2s_v5
-        node_count: 3
+        instance_type: !env INSTANCE_TYPE Standard_D2as_v4 # Standard_D2s_v5
+        node_count: !env NODE_COUNT 2 # 3
+
+  helmfile:
+    apps:
+      vars:
+        apps:
+          # Deep-merged over stacks/catalog/apps.yaml: pin ArgoCD to the static IP from k8s-cluster
+          argocd:
+            values:
+              server:
+                service:
+                  annotations:
+                    service.beta.kubernetes.io/azure-load-balancer-ipv4: !terraform.output k8s-cluster ingress_ip

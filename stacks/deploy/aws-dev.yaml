@@ -1,6 +1,9 @@
 # Usage: CLUSTER_NAME=<name> atmos terraform plan k8s-cluster -s aws-dev
 import:
   - mixins/aws
+  - catalog/defaults
+  - catalog/cluster-base
+  - catalog/apps
 
 vars:
   stage: dev
@@ -19,14 +22,5 @@ components:
       vars:
         region: us-east-1
         kubernetes_version: "1.33"
-        instance_type: m6i.large
-        node_count: 3
-
-    # Replaces default gp2 StorageClass; needs kubeconfig for the cluster (aws eks update-kubeconfig)
-    storage-class:
-      metadata:
-        component: aws/storage-class
-        terraform_workspace: '{{ env "CLUSTER_NAME" | default "CLUSTER_NAME-not-set" }}'
-      backend:
-        s3:
-          key: storage-class.tfstate
+        instance_type: !env INSTANCE_TYPE m6i.large
+        node_count: !env NODE_COUNT 3

@@ -39,6 +39,13 @@ resource "azurerm_kubernetes_cluster" "this" {
     name       = "system"
     node_count = var.node_count
     vm_size    = var.instance_type
+    # Lets instance_type changes rotate the pool instead of recreating the cluster
+    temporary_name_for_rotation = "tmpsystem"
+
+    # Azure default; declared to avoid a perpetual diff
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   identity {
@@ -46,4 +53,15 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   tags = local.tags
+}
+
+# Static inbound IP for LoadBalancer services (ArgoCD, see stacks/deploy/azure-dev.yaml).
+# Lives in the AKS node resource group, so the cluster identity can attach it without extra role assignments.
+resource "azurerm_public_ip" "ingress" {
+  name                = "${var.cluster_name}-ingress"
+  resource_group_name = azurerm_kubernetes_cluster.this.node_resource_group
+  location            = azurerm_resource_group.this.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = local.tags
 }

@@ -10,3 +10,13 @@ terraform:
       region: us-east-1
       # Terraform's default prefix: keeps state at env:/<cluster>/<key>, where the old workflow put it
       workspace_key_prefix: "env:"
+
+# The only cloud-specific part of the cluster baseline: CSI driver behind StorageClass default-rwo
+components:
+  helmfile:
+    cluster-base:
+      vars:
+        storage:
+          provisioner: ebs.csi.aws.com
+          parameters:
+            type: gp3

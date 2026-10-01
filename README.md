@@ -12,7 +12,7 @@ A set of tools and scripts to install and manage various resources in AWS and Ku
 **🔑 Key pieces:**
 - `components/terraform/<cloud>/k8s-cluster` – Terraform for provisioning/deleting a Kubernetes cluster in AWS (EKS), Google Cloud (GKE) or Azure (AKS), driven by [Atmos](https://atmos.tools) stacks in `stacks/` (see below).
 - `ec2-scheduled` - Terraform code for managing state of EC2 instances (and EKS autoscaling groups).
-- `Infrastructure components` - terraform and shell scripts to install supported infra components into EKS cluster.
+- `components/helmfile` – cluster baseline (same on every cloud) and infrastructure apps (Netcracker components, ArgoCD, ...) deployed with Helmfile via Atmos.
 
 ---
 
@@ -21,14 +21,10 @@ Documentation for individual tool/script can be found in docs folder, contents a
 
 | Component         | Purpose                                                  | Document                                              |
 |-------------------|----------------------------------------------------------|-------------------------------------------------------|
-| Kubernetes        | Provision VPC, EKS Cluster and infrastructure components | [Kubernetes Installation](docs/kubernetes-install.md) |
+| Kubernetes        | Provision EKS/AKS/GKE cluster and infrastructure apps    | [Kubernetes Installation](docs/kubernetes-install.md) |
 | EC2 Start         | Scheduled start of predefined EC2 instances              | [EC2 Start](docs/ec2-start.md)                        |
 | EC2 Stop          | Scheduled stop of predefined EC2 instances               | [EC2 Stop](docs/ec2-stop.md)                         |
 | EC2 Control       | Reusable workflow to on-demand start/stop EC2 Instance   | [EC2 Control](docs/ec2-control.md)                    |
-| Postgres Install  | Install Postgres to EKS Cluster                          | [Postgres](docs/postgres.md)                          |
-| Consul Install    | Install Consul to EKS Cluster                            | [Consul](docs/consul.md)                              |
-| Zookeeper Install | Install Zookeeper to EKS Cluster                         | [Zookeeper](docs/zookeeper.md)                        |
-| Kafka Install     | Install Kafka to EKS Cluster                             | [Kafka](docs/kafka.md)                                |
 | Order New AWS Env | Order new AWS environment (instance or EKS cluster)      | [New_Env](docs/order_new_env.MD)                                |
 
 ---
@@ -66,6 +62,15 @@ Documentation for individual tool/script can be found in docs folder, contents a
    atmos terraform apply k8s-cluster -s aws-dev
    ```
    Credentials come from the usual env vars (`AWS_*`, `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_PROJECT`, `ARM_*`). Before first use of GCP/Azure, set the state bucket / storage account in `stacks/mixins/gcp.yaml` / `stacks/mixins/azure.yaml`.
+
+   Cluster and apps lifecycle: [stacks/workflows/k8s.yaml](stacks/workflows/k8s.yaml), [stacks/workflows/apps.yaml](stacks/workflows/apps.yaml); Terraform/helm/helmfile are installed by the Atmos toolchain:
+   ```bash
+   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig
+   NODE_COUNT=4 atmos workflow deploy-cluster -f k8s -s aws-dev      # create / update / scale + baseline
+   APPS=argocd,kafka atmos workflow deploy-apps -f apps -s aws-dev   # apps and their dependencies
+   atmos workflow destroy -f k8s -s aws-dev
+   ```
+   In GitHub use **Kubernetes Cluster (Atmos)** and **Kubernetes Apps (Atmos)**, see [Kubernetes Installation](docs/kubernetes-install.md).
 
 ---
 

@@ -1,0 +1,4 @@
+# Passwords the dbaas-aggregator chart requires; from env (GitHub secrets of the same names), defaults are for throwaway dev clusters
+{{- range list "BACKUP_DAEMON_DBAAS_ACCESS_PASSWORD" "DBAAS_CLUSTER_DBA_CREDENTIALS_PASSWORD" "DBAAS_TENANT_PASSWORD" "DBAAS_DB_EDITOR_CREDENTIALS_PASSWORD" "DISCR_TOOL_USER_PASSWORD" }}
+{{ . }}: {{ env . | default "dbaas-dev-password" | quote }}
+{{- end }}

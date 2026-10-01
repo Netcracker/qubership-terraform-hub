@@ -1,0 +1,119 @@
+name: Kubernetes Apps (Atmos)
+run-name: >-
+  ${{ inputs.action }} [${{ inputs.apps }}] on ${{ inputs.cluster_name }} @ ${{ inputs.cloud }} (${{ inputs.environment }})
+
+# Deploy / upgrade / remove apps (stacks/catalog/apps.yaml) on a cluster created by k8s-cluster.yml.
+# Same for every cloud; dependencies between apps (`needs`) are resolved by helmfile.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider (stack = <cloud>-dev)"
+        type: choice
+        options: [aws, azure, gcp]
+        required: true
+      cluster_name:
+        description: "Cluster name"
+        type: string
+        required: true
+      apps:
+        description: "Comma-separated apps or `all`: argocd, consul, zookeeper, kafka, postgres, rabbitmq, opensearch, dbaas, monitoring, arangodb, cassandra"
+        type: string
+        default: argocd
+      action:
+        description: "diff = preview; deploy = install/upgrade (with dependencies); destroy = uninstall listed apps"
+        type: choice
+        options: [diff, deploy, destroy]
+        default: diff
+      environment:
+        description: "GitHub environment with the cloud secrets"
+        type: string
+        default: dev
+
+# Shared with k8s-cluster.yml: never touch apps while the cluster changes
+concurrency:
+  group: k8s-${{ inputs.cloud }}-${{ inputs.cluster_name }}
+  cancel-in-progress: false
+
+jobs:
+  atmos:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      STACK: ${{ inputs.cloud }}-dev
+      CLUSTER_NAME: ${{ inputs.cluster_name }}
+      APPS: ${{ inputs.apps }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # First step, so failed runs show their inputs too
+      - name: Run parameters
+        env:
+          INPUTS: ${{ toJSON(inputs) }}
+          ACTOR: ${{ github.triggering_actor }}
+          REF: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## Run parameters"
+            echo "| Parameter | Value |"
+            echo "|---|---|"
+            jq -r 'to_entries[] | "| \(.key) | \(if .value == "" then "—" else "`\(.value)`" end) |"' <<< "$INPUTS"
+            echo "| started by | \`$ACTOR\` |"
+            echo "| ref | \`$REF\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Atmos setup
+        uses: $/.github/actions/atmos-setup
+        with:
+          cloud: ${{ inputs.cloud }}
+          atmos-version: ${{ vars.ATMOS_VERSION || '1.230.0' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Apps ${{ inputs.action }}
+        env:
+          ACTION: ${{ inputs.action }}
+          # Optional app credentials (components/helmfile/apps/values/*.gotmpl); empty = dev defaults / generated
+          ARGOCD_ADMIN_PASSWORD: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          REPLICATOR_PASSWORD: ${{ secrets.REPLICATOR_PASSWORD }}
+          BACKUP_DAEMON_DBAAS_ACCESS_PASSWORD: ${{ secrets.BACKUP_DAEMON_DBAAS_ACCESS_PASSWORD }}
+          DBAAS_CLUSTER_DBA_CREDENTIALS_PASSWORD: ${{ secrets.DBAAS_CLUSTER_DBA_CREDENTIALS_PASSWORD }}
+          DBAAS_TENANT_PASSWORD: ${{ secrets.DBAAS_TENANT_PASSWORD }}
+          DBAAS_DB_EDITOR_CREDENTIALS_PASSWORD: ${{ secrets.DBAAS_DB_EDITOR_CREDENTIALS_PASSWORD }}
+          DISCR_TOOL_USER_PASSWORD: ${{ secrets.DISCR_TOOL_USER_PASSWORD }}
+        run: atmos workflow "$ACTION-apps" -f apps -s "$STACK"
+
+      # Public repo: never print passwords, only where to find them
+      - name: Access summary
+        if: inputs.action == 'deploy'
+        env:
+          HAS_ARGOCD_PASSWORD: ${{ secrets.ARGOCD_ADMIN_PASSWORD != '' }}
+        run: |
+          {
+            echo "## Exposed services"
+            echo '```'
+            kubectl get svc -A --field-selector spec.type=LoadBalancer \
+              -o custom-columns='NAMESPACE:.metadata.namespace,SERVICE:.metadata.name,ADDRESS:.status.loadBalancer.ingress[0].ip,HOSTNAME:.status.loadBalancer.ingress[0].hostname,PORTS:.spec.ports[*].port'
+            echo '```'
+            if kubectl get ns argocd >/dev/null 2>&1; then
+              echo "ArgoCD: user \`admin\`, password $([ "$HAS_ARGOCD_PASSWORD" = true ] \
+                && echo "from GitHub secret \`ARGOCD_ADMIN_PASSWORD\`" \
+                || echo "generated: \`kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d\`")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

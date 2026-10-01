@@ -23,3 +23,18 @@ output "cluster_name" {
 }
 
 
+# No secrets inside: token comes from `aws eks get-token` at call time
+output "kubeconfig" {
+  value = yamlencode({
+    apiVersion      = "v1"
+    kind            = "Config"
+    current-context = module.eks.cluster_name
+    clusters        = [{ name = module.eks.cluster_name, cluster = { server = module.eks.cluster_endpoint, certificate-authority-data = module.eks.cluster_certificate_authority_data } }]
+    contexts        = [{ name = module.eks.cluster_name, context = { cluster = module.eks.cluster_name, user = module.eks.cluster_name } }]
+    users = [{ name = module.eks.cluster_name, user = { exec = {
+      apiVersion = "client.authentication.k8s.io/v1beta1"
+      command    = "aws"
+      args       = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region, "--output", "json"]
+    } } }]
+  })
+}

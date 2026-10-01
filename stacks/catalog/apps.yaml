@@ -1,0 +1,88 @@
+# App registry for components/helmfile/apps. Cloud-agnostic: apps rely only on the cluster baseline
+# (StorageClass default-rwo, cert-manager). Per-stack tweaks go to `apps.<name>.values` in stacks/deploy/*.
+#   chart      repo/chart, release .tgz URL or git:: URL (versions pinned)
+#   namespace  also used by other apps to reach this one (<svc>.<namespace>)
+#   release    Helm release name (default: key)
+#   app        selector group (default: key), e.g. operator + its CR are deployed together
+#   needs      keys of apps that must be deployed first
+#   installed  false = uninstall on next apply
+#   disableValidationOnInstall  false = validate against the cluster even on first install (default: true)
+
+components:
+  helmfile:
+    apps:
+      vars:
+        repositories:
+          argo: https://argoproj.github.io/argo-helm
+          arangodb: https://arangodb.github.io/kube-arangodb
+          k8ssandra: https://helm.k8ssandra.io/stable
+        apps:
+          argocd:
+            chart: argo/argo-cd
+            version: 10.9.2
+            namespace: argocd
+          consul:
+            chart: https://github.com/Netcracker/qubership-consul/releases/download/0.14.4/consul-0.14.4.tgz
+            namespace: consul
+            release: consul-service
+          zookeeper:
+            chart: https://github.com/Netcracker/qubership-zookeeper/releases/download/0.14.1/zookeeper-service-0.14.1.tgz
+            namespace: zookeeper
+            release: zookeeper-service
+          kafka:
+            chart: https://github.com/Netcracker/qubership-kafka/releases/download/2.8.1/kafka-2.8.1.tgz
+            namespace: kafka
+            needs: [zookeeper]
+          postgres:
+            chart: https://github.com/Netcracker/pgskipper-operator/releases/download/1.54.4/patroni-core-1.54.4.tgz
+            namespace: postgres
+            release: patroni-core
+          rabbitmq:
+            chart: https://github.com/Netcracker/qubership-rabbitmq/releases/download/2.4.0/rabbitmq-chart-2.4.0.tgz
+            namespace: rabbitmq
+            release: rabbitmq-service
+          opensearch:
+            chart: https://github.com/Netcracker/qubership-opensearch/releases/download/2.6.8/opensearch-2.6.8.tgz
+            namespace: opensearch
+          dbaas:
+            # No chart .tgz in releases: taken from git at the release tag
+            chart: git::https://github.com/Netcracker/qubership-dbaas.git@helm-templates/dbaas-aggregator?ref=v6.15.1
+            namespace: dbaas
+            needs: [postgres]
+          mistral:
+            # Upstream chart bug (all releases up to 2.0.7 and main): deployment.yaml uses undefined template
+            # "mistral.operatorImage", so it cannot render. Re-enable once fixed upstream.
+            installed: false
+            chart: https://github.com/Netcracker/qubership-mistral-operator/releases/download/2.0.7/mistral-operator-2.0.7.tgz
+            namespace: mistral
+            release: mistral-operator
+            needs: [postgres, kafka, rabbitmq]
+          monitoring:
+            chart: git::https://github.com/Netcracker/qubership-monitoring-operator.git@charts/qubership-monitoring-operator?ref=v0.88.1
+            namespace: monitoring
+            release: monitoring-operator
+          arangodb:
+            chart: arangodb/kube-arangodb
+            version: 1.4.5
+            namespace: arangodb
+            release: arangodb-operator
+            values:
+              operator:
+                replicaCount: 1
+          arangodb-cluster:
+            app: arangodb
+            chart: ../charts/raw
+            namespace: arangodb
+            needs: [arangodb]
+          cassandra:
+            chart: k8ssandra/k8ssandra-operator
+            version: 1.33.0
+            namespace: cassandra
+            release: k8ssandra-operator
+            # Its chart checks .Capabilities for cert-manager, which helm-diff only sees with validation on
+            disableValidationOnInstall: false
+          cassandra-cluster:
+            app: cassandra
+            chart: ../charts/raw
+            namespace: cassandra
+            needs: [cassandra]

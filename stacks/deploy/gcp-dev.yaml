@@ -1,6 +1,9 @@
 # Usage: CLUSTER_NAME=<name> atmos terraform plan k8s-cluster -s gcp-dev
 import:
   - mixins/gcp
+  - catalog/defaults
+  - catalog/cluster-base
+  - catalog/apps
 
 vars:
   stage: dev
@@ -17,5 +20,5 @@ components:
           prefix: k8s-cluster
       vars:
         region: us-east1
-        instance_type: e2-standard-2
-        node_count: 1 # per zone -> 3 nodes
+        instance_type: !env INSTANCE_TYPE e2-standard-2
+        node_count: !env NODE_COUNT 1 # per zone -> 3 nodes

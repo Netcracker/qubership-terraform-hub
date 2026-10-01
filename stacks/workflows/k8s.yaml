@@ -1,0 +1,52 @@
+# Cluster lifecycle, identical for every cloud stack (aws-dev | azure-dev | gcp-dev). Apps: stacks/workflows/apps.yaml.
+#   export CLUSTER_NAME=my-cluster KUBECONFIG=/tmp/my-cluster.kubeconfig
+#   atmos workflow deploy-cluster -f k8s -s aws-dev   # create / update / scale (NODE_COUNT, INSTANCE_TYPE) + baseline
+#   atmos workflow destroy        -f k8s -s aws-dev   # apps, their volumes, baseline, cluster
+# KUBECONFIG is overwritten with the cluster's kubeconfig (exec auth needs aws CLI on AWS, gke-gcloud-auth-plugin on GCP).
+workflows:
+  kubeconfig:
+    description: Write the k8s-cluster `kubeconfig` output to $KUBECONFIG
+    dependencies:
+      tools:
+        jq: "1.8.1"
+    steps:
+      - name: require-env
+        type: shell
+        command: test -n "$KUBECONFIG" || { echo "KUBECONFIG is not set" >&2; exit 1; }
+      - name: outputs
+        command: terraform output k8s-cluster --format json -o {{ .Env.KUBECONFIG }}.outputs.json
+      - name: write
+        type: shell
+        command: jq -er .kubeconfig "$KUBECONFIG.outputs.json" > "$KUBECONFIG" && rm -f "$KUBECONFIG.outputs.json"
+
+  deploy-cluster:
+    description: Create, update or scale the cluster and apply the cluster baseline
+    steps:
+      - name: cluster
+        command: terraform deploy k8s-cluster
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      - name: baseline
+        command: helmfile apply cluster-base -- --suppress CustomResourceDefinition --suppress-secrets --context 3
+
+  destroy:
+    description: Destroy apps, their volumes, the baseline and the cluster
+    dependencies:
+      tools:
+        kubectl: "1.33.0"
+    steps:
+      - name: kubeconfig
+        command: workflow kubeconfig -f k8s
+      # Releases LoadBalancers first, otherwise their public IPs can't be deleted
+      - name: apps
+        command: helmfile destroy apps -- --deleteWait --deleteTimeout 600
+      # StatefulSet PVCs outlive `helm uninstall`; their disks would leak on AWS/GCP once the cluster is gone
+      - name: volumes
+        type: shell
+        command: |
+          kubectl delete pvc --all --all-namespaces --wait=false
+          if kubectl get pv -o name | grep -q .; then kubectl wait --for=delete pv --all --timeout=10m; fi
+      - name: baseline
+        command: helmfile destroy cluster-base
+      - name: cluster
+        command: terraform destroy k8s-cluster -auto-approve
