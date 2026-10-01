@@ -113,12 +113,12 @@ jobs:
 
             while IFS= read -r -d '' file; do
               chunk+=("$file")
-              ((count++))
+              ((++count))          # fixed
               if [ "$count" -ge 1000 ]; then
                 stage_chunk chunk
                 chunk=()
                 count=0
-                ((chunk_index++))
+                ((++chunk_index))  # fixed for consistency
               fi
             done < /tmp/staged_files_null
 
