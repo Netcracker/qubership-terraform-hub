@@ -154,6 +154,22 @@ jobs:
             fi
           fi
 
+          # Helper: emit empty/fallback outputs
+          emit_empty() {
+            {
+              echo "PASS_RATE=No data"
+              echo "PASS_RATE_ROUNDED=No data"
+              echo "OVERALL_STATUS=No data"
+              echo "TOTAL_TESTS=0"
+              echo "PASSED_TESTS=0"
+              echo "SKIPPED_TESTS=0"
+              echo "FAILED_TESTS=0"
+              echo "FAILURE_RATE=0"
+              echo "COVERAGE=0"
+              echo "UNKNOWN_TESTS=0"
+            } >> $GITHUB_OUTPUT
+          }
+
           # ── 3. Give up gracefully with debug info ────────────────────────────
           if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
             echo "❌ $RESULTS_FILE could not be located."
@@ -161,13 +177,7 @@ jobs:
             find "$SOURCE_DIR" -type f | sort || true
             echo "--- Debug: S3 listing for $PARSED_S3_DIR ---"
             aws s3 ls "s3://$S3_BUCKET/$PARSED_S3_DIR/" --recursive || true
-            {
-              echo "PASS_RATE=No data"
-              echo "TOTAL_TESTS=0"
-              echo "PASSED_TESTS=0"
-              echo "SKIPPED_TESTS=0"
-              echo "UNKNOWN_TESTS=0"
-            } >> $GITHUB_OUTPUT
+            emit_empty
             exit 0
           fi
 
@@ -178,45 +188,54 @@ jobs:
             echo "❌ File is not valid JSON. First 200 bytes:"
             head -c 200 "$LOCAL_PATH"
             echo
-            {
-              echo "PASS_RATE=No data"
-              echo "TOTAL_TESTS=0"
-              echo "PASSED_TESTS=0"
-              echo "SKIPPED_TESTS=0"
-              echo "UNKNOWN_TESTS=0"
-            } >> $GITHUB_OUTPUT
+            emit_empty
             exit 0
           fi
 
           # ── 5. Extract values ─────────────────────────────────────────────────
+          OVERALL_STATUS=$(jq -r '.test_results.overall_status // "No data"' "$LOCAL_PATH")
           PASS_RATE=$(jq -r '.test_results.pass_rate // "No data"' "$LOCAL_PATH")
+          PASS_RATE_ROUNDED=$(jq -r '.test_results.pass_rate_rounded // "No data"' "$LOCAL_PATH")
           TOTAL_TESTS=$(jq -r '.test_results.total_count // 0' "$LOCAL_PATH")
           PASSED_TESTS=$(jq -r '.test_results.passed_count // 0' "$LOCAL_PATH")
           SKIPPED_TESTS=$(jq -r '.test_results.skipped_count // 0' "$LOCAL_PATH")
           FAILED_TESTS=$(jq -r '.test_results.failed_count // 0' "$LOCAL_PATH")
+          FAILURE_RATE=$(jq -r '.test_results.failure_rate // 0' "$LOCAL_PATH")
+          COVERAGE=$(jq -r '.test_results.coverage // 0' "$LOCAL_PATH")
           UNKNOWN_TESTS=$(jq -r '
             ((.test_results.total_count // 0) -
              (.test_results.passed_count // 0) -
              (.test_results.skipped_count // 0) -
              (.test_results.failed_count // 0))' "$LOCAL_PATH")
 
+          # Pretty-print pass rate for the table (add % if numeric)
+          DISPLAY_PASS_RATE="$PASS_RATE"
           if [[ "$PASS_RATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-            PASS_RATE="${PASS_RATE}%"
+            DISPLAY_PASS_RATE="${PASS_RATE}%"
           fi
 
           echo "=== Parsed Test Summary from $RESULTS_FILE ==="
-          echo "Pass Rate: $PASS_RATE"
+          echo "Overall Status: $OVERALL_STATUS"
+          echo "Pass Rate: $DISPLAY_PASS_RATE"
+          echo "Pass Rate (rounded): $PASS_RATE_ROUNDED"
           echo "Total Tests: $TOTAL_TESTS"
           echo "Passed: $PASSED_TESTS"
           echo "Skipped: $SKIPPED_TESTS"
           echo "Failed: $FAILED_TESTS"
+          echo "Failure Rate: $FAILURE_RATE"
+          echo "Coverage: $COVERAGE"
           echo "Unknown/Other: $UNKNOWN_TESTS"
 
           {
-            echo "PASS_RATE=${PASS_RATE}"
+            echo "PASS_RATE=${DISPLAY_PASS_RATE}"
+            echo "PASS_RATE_ROUNDED=${PASS_RATE_ROUNDED}"
+            echo "OVERALL_STATUS=${OVERALL_STATUS}"
             echo "TOTAL_TESTS=${TOTAL_TESTS}"
             echo "PASSED_TESTS=${PASSED_TESTS}"
             echo "SKIPPED_TESTS=${SKIPPED_TESTS}"
+            echo "FAILED_TESTS=${FAILED_TESTS}"
+            echo "FAILURE_RATE=${FAILURE_RATE}"
+            echo "COVERAGE=${COVERAGE}"
             echo "UNKNOWN_TESTS=${UNKNOWN_TESTS}"
           } >> $GITHUB_OUTPUT
 
@@ -421,11 +440,19 @@ jobs:
 
             The Allure report has been successfully generated for **${{ steps.parse_path.outputs.TEST_TYPE }}**.
 
-            📊 **Test Results:**
-            - Total Tests: ${{ steps.pass_rate.outputs.TOTAL_TESTS }}
-            - Passed: ${{ steps.pass_rate.outputs.PASSED_TESTS }}
-            - Skipped: ${{ steps.pass_rate.outputs.SKIPPED_TESTS }}
-            - **Pass Rate: ${{ steps.pass_rate.outputs.PASS_RATE }}** (based on executed tests only)
+            Results:
+
+            | Metric | Value |
+            |---|---|
+            | Overall Status | ${{ steps.pass_rate.outputs.OVERALL_STATUS }} |
+            | Pass Rate | ${{ steps.pass_rate.outputs.PASS_RATE }} |
+            | Pass Rate (rounded) | ${{ steps.pass_rate.outputs.PASS_RATE_ROUNDED }} |
+            | Total Count | ${{ steps.pass_rate.outputs.TOTAL_TESTS }} |
+            | Passed Count | ${{ steps.pass_rate.outputs.PASSED_TESTS }} |
+            | Failed Count | ${{ steps.pass_rate.outputs.FAILED_TESTS }} |
+            | Skipped Count | ${{ steps.pass_rate.outputs.SKIPPED_TESTS }} |
+            | Failure Rate | ${{ steps.pass_rate.outputs.FAILURE_RATE }} |
+            | Coverage | ${{ steps.pass_rate.outputs.COVERAGE }} |
 
             DOWNLOAD LINKS:
             Single report file: ${{ env.SINGLE_URL }}
