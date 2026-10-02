@@ -1,0 +1,89 @@
+name: Kubernetes Cluster (Atmos)
+run-name: >-
+  ${{ inputs.action }} ${{ inputs.cluster_name }} @ ${{ inputs.cloud }} (${{ inputs.environment }})${{ inputs.node_count && format(' nodes={0}', inputs.node_count) || '' }}${{ inputs.instance_type && format(' type={0}', inputs.instance_type) || '' }}
+
+# Create / update / scale / destroy a k8s cluster on AWS, Azure or GCP. Every cloud gets the same baseline
+# (StorageClass default-rwo, cert-manager); apps are deployed separately by k8s-apps.yml.
+# Orchestration lives in Atmos (stacks/workflows/k8s.yaml); plan/apply results land in the job summary via Atmos native CI.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider (stack = <cloud>-dev)"
+        type: choice
+        options: [aws, azure, gcp]
+        required: true
+      cluster_name:
+        description: "Cluster name (one Terraform workspace per cluster)"
+        type: string
+        required: true
+      action:
+        description: "plan = preview only; deploy = create/update/scale; destroy = delete apps, volumes and cluster"
+        type: choice
+        options: [plan, deploy, destroy]
+        default: plan
+      node_count:
+        description: "Scale: node count (GCP: per zone). Empty = stack default"
+        type: string
+        required: false
+      instance_type:
+        description: "Scale: node instance type. Empty = stack default"
+        type: string
+        required: false
+      environment:
+        description: "GitHub environment with the cloud secrets"
+        type: string
+        default: dev
+
+# Shared with k8s-apps.yml: never touch apps while the cluster changes
+concurrency:
+  group: k8s-${{ inputs.cloud }}-${{ inputs.cluster_name }}
+  cancel-in-progress: false # cancelling terraform leaves a state lock
+
+jobs:
+  atmos:
+    runs-on: ubuntu-latest # ships the aws CLI used by EKS kubeconfig exec auth
+    environment: ${{ inputs.environment }}
+    env:
+      STACK: ${{ inputs.cloud }}-dev
+      CLUSTER_NAME: ${{ inputs.cluster_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # First step, so failed runs show their inputs too
+      - name: Run parameters
+        env:
+          INPUTS: ${{ toJSON(inputs) }}
+          ACTOR: ${{ github.triggering_actor }}
+          REF: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## Run parameters"
+            echo "| Parameter | Value |"
+            echo "|---|---|"
+            jq -r 'to_entries[] | "| \(.key) | \(if .value == "" then "—" else "`\(.value)`" end) |"' <<< "$INPUTS"
+            echo "| started by | \`$ACTOR\` |"
+            echo "| ref | \`$REF\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Atmos setup
+        uses: $/.github/actions/atmos-setup
+        with:
+          cloud: ${{ inputs.cloud }}
+          atmos-version: ${{ vars.ATMOS_VERSION || '1.230.0' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
