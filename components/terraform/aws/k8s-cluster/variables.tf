@@ -13,8 +13,9 @@ variable "region" {
 }
 
 variable "kubernetes_version" {
-  description = "The Kubernetes version for the EKS cluster."
-  default     = "1.33"
+  description = "The Kubernetes version for the EKS cluster. null = keep the current one (new cluster: EKS default)."
+  type        = string
+  default     = null
 }
 
 variable "instance_type" {
