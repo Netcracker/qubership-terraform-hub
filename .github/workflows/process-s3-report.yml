@@ -26,6 +26,16 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Show inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          S3_DIRECTORY_INPUT: ${{ github.event.inputs.s3_directory }}
+          CLIENT_PAYLOAD_DIRECTORY: ${{ github.event.client_payload.directory }}
+        run: |
+          echo "EVENT_NAME: ${EVENT_NAME}"
+          echo "S3_DIRECTORY_INPUT: ${S3_DIRECTORY_INPUT}"
+          echo "CLIENT_PAYLOAD_DIRECTORY: ${CLIENT_PAYLOAD_DIRECTORY}"
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,8 +44,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_S3_ACCESS_KEY_SECRET }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Parse S3 path
