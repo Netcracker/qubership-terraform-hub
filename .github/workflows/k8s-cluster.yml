@@ -37,7 +37,7 @@ on:
       environment:
         description: "GitHub environment with the cloud secrets"
         type: string
-        default: dev
+        default: eks-admin
 
 # Shared with k8s-apps.yml: never touch apps while the cluster changes
 concurrency:
@@ -79,8 +79,9 @@ jobs:
         with:
           cloud: ${{ inputs.cloud }}
           atmos-version: ${{ vars.ATMOS_VERSION || '1.230.0' }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-oidc: ${{ vars.AWS_OIDC }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
           gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
           arm-client-id: ${{ secrets.ARM_CLIENT_ID }}

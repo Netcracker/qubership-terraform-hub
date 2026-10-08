@@ -15,6 +15,9 @@ inputs:
   aws-secret-access-key:
     description: AWS credentials (cloud=aws)
     default: ""
+  aws-oidc:
+    description: AWS OIDC provider ARN (cloud=aws)
+    default: ""
   aws-region:
     description: AWS region (cloud=aws)
     default: us-east-1
@@ -74,6 +77,7 @@ runs:
         aws-access-key-id: ${{ inputs.aws-access-key-id }}
         aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
         aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.aws-oidc }}
 
     # Terraform (azurerm provider and backend) reads ARM_* directly; AKS kubeconfig is certificate-based, so no az login
     - name: Configure Azure credentials
