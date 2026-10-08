@@ -1,0 +1,65 @@
+# Qubership-pioneer was created on 2025-03-04 by other Terraform code and adopted into this state later.
+# Everything below is what the cluster really has; without it `plan` replaces the node group, its IAM role
+# and launch template, and deletes the add-ons and policy attachments this component does not know about.
+
+# Values the cost report (aws-cost-reports) already groups by
+tags:
+  cost-usage: pioneer
+
+vpc:
+  # The VPC is shared with the api-hub-demo cluster and is not named after this one
+  name: Qubership
+  # Its default SG / route table / NACL were never managed; adopting them would wipe their rules and routes
+  manage_defaults: false
+  tags:
+    project: Qubership
+    cost-usage: common
+    kubernetes.io/cluster/Qubership-pioneer: shared
+  # Public and private subnets: load balancer subnet discovery of the second cluster
+  subnet_tags:
+    kubernetes.io/cluster/api-hub-demo: shared
+
+# Created by this IAM user; pinned so that the access entry is not replaced by whoever runs Terraform
+cluster_admin_arn: arn:aws:iam::442426885383:user/terraform-tech-user
+
+# Attachments only: the policies themselves are not managed here
+cluster_role_policies:
+  AmazonEKSVPCResourceController: arn:aws:iam::aws:policy/AmazonEKSVPCResourceController
+  cluster_extra: arn:aws:iam::442426885383:policy/Qubership-pioneer-cluster-20250304093242008100000001
+
+addons:
+  aws-efs-csi-driver: {}
+  aws-mountpoint-s3-csi-driver:
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityMountpointForAmazonS3CSIDriverRole
+        service_account: s3-csi-driver-sa
+  vpc-cni:
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonVPCCNIRole
+        service_account: aws-node
+  # Uses Pod Identity, not the IRSA role the component creates
+  aws-ebs-csi-driver:
+    service_account_role_arn: null
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonEBSCSIDriverRole
+        service_account: ebs-csi-controller-sa
+
+node_group:
+  # Name prefixes of the existing node group, node role and launch template (changing any of them forces replacement)
+  name: spot_group
+  iam_role_name: Qubership-pioneer-node-role
+  launch_template_name: spot_group
+  # Forces replacement too; takes precedence over the INSTANCE_TYPE input
+  instance_types: [m6i.xlarge, m6i.large]
+  key_name: ec2_eks_id_rsa
+  enable_monitoring: true
+  # Hop limit 2 lets pods reach IMDS: the LB controller and cluster-autoscaler run on the node role's policies below
+  metadata_options:
+    http_put_response_hop_limit: 2
+  iam_role_additional_policies:
+    AmazonEKSLoadBalancingPolicy: arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy
+    EBSAndEFSCSIPolicy: arn:aws:iam::442426885383:policy/EBS-and-EFS-CSI-Policy
+    AWSLoadBalancerControllerIAMPolicy: arn:aws:iam::442426885383:policy/AWSLoadBalancerControllerIAMPolicy
+    AWLLBControllerPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Policy
+    ClusterAutoscalerPolicy: arn:aws:iam::442426885383:policy/Cluster-Autoscaler-Policy
+    AWLLBControllerTagPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Tag-Policy

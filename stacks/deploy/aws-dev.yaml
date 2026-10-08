@@ -21,6 +21,6 @@ components:
           key: kubernetes-install.tfstate
       vars:
         region: us-east-1
-        kubernetes_version: "1.33"
+        kubernetes_version: "1.36"
         instance_type: !env INSTANCE_TYPE m6i.large
         node_count: !env NODE_COUNT 3

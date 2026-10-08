@@ -17,52 +17,19 @@ locals {
   vpc_cidr = var.vpc_cidr
   azs      = slice(data.aws_availability_zones.available.names, 0, 3)
 
-  tags = {
+  # Clusters that were not created by this component keep their real names, attachments and tags in
+  # clusters/<cluster_name>.yaml, so adopting them into the state replaces nothing. No file = no overrides.
+  cluster_file = "${path.module}/clusters/${var.cluster_name}.yaml"
+  cluster      = yamldecode(fileexists(local.cluster_file) ? file(local.cluster_file) : "{}")
+
+  tags = merge({
     project    = local.projectname
     Environment = "dev"
     requestor   = "Red-Team"
     created-by  = "Terraform-CI"
     cost-usage = local.projectname
-  }
-}
+  }, try(local.cluster.tags, {}))
 
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = local.projectname
-  cidr = local.vpc_cidr
-
-  azs             = local.azs
-  private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
-  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
-  intra_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 52)]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-
-  public_subnet_tags = {
-    "kubernetes.io/role/elb" = 1
-  }
-
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = 1
-  }
-
-  tags = local.tags
-}
-
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.0"
-
-  name    = local.projectname
-  kubernetes_version = var.kubernetes_version
-  upgrade_policy = {
-    support_type = "STANDARD"
-  }
-
-  # EKS Addons
   addons = {
     coredns                = {}
     eks-pod-identity-agent = {
@@ -76,19 +43,86 @@ module "eks" {
       most_recent              = true
       service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
     }
-    }
+  }
+  cluster_addons = try(local.cluster.addons, {})
+}
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = try(local.cluster.vpc.name, local.projectname)
+  cidr = local.vpc_cidr
+
+  # Adopting the default SG / route table / NACL of an existing VPC wipes their rules and routes
+  manage_default_security_group = try(local.cluster.vpc.manage_defaults, true)
+  manage_default_route_table    = try(local.cluster.vpc.manage_defaults, true)
+  manage_default_network_acl    = try(local.cluster.vpc.manage_defaults, true)
+
+  azs             = local.azs
+  private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
+  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
+  intra_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 52)]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  public_subnet_tags = merge({
+    "kubernetes.io/role/elb" = 1
+  }, try(local.cluster.vpc.subnet_tags, {}))
+
+  private_subnet_tags = merge({
+    "kubernetes.io/role/internal-elb" = 1
+  }, try(local.cluster.vpc.subnet_tags, {}))
+
+  tags = merge(local.tags, try(local.cluster.vpc.tags, {}))
+}
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 21.0"
+
+  name    = local.projectname
+  kubernetes_version = var.kubernetes_version
+  upgrade_policy = {
+    support_type = "STANDARD"
+  }
+
+  # EKS Addons: the cluster file adds addons and overrides single attributes of the common ones
+  # (try() only around the file data: around local.addons it would turn the not yet known role ARN into unknown keys)
+  addons = merge(
+    { for k, v in local.addons : k => merge(v, try(local.cluster_addons[k], {})) },
+    { for k, v in local.cluster_addons : k => v if !contains(keys(local.addons), k) },
+  )
 
     endpoint_public_access = true
-    enable_cluster_creator_admin_permissions = true
     create_cloudwatch_log_group = false
+
+    # Cluster admin: whoever runs Terraform, unless the cluster file pins the original creator
+    # (otherwise the access entry is replaced and that principal loses access).
+    enable_cluster_creator_admin_permissions = !can(local.cluster.cluster_admin_arn)
+    access_entries = can(local.cluster.cluster_admin_arn) ? {
+      cluster_creator = {
+        principal_arn = local.cluster.cluster_admin_arn
+        policy_associations = {
+          admin = {
+            policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+            access_scope = { type = "cluster" }
+          }
+        }
+      }
+    } : {}
+
+    iam_role_additional_policies = try(local.cluster.cluster_role_policies, {})
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-      name = {
+      name = merge({
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
       name           = local.projectname
+      kubernetes_version = var.kubernetes_version
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = [var.instance_type]
       capacity_type  = "SPOT"
@@ -96,7 +130,7 @@ module "eks" {
       min_size     = var.node_count
       max_size     = var.node_count + 1
       desired_size = var.node_count
-    }
+    }, try(local.cluster.node_group, {}))
   }
   tags = local.tags
 }
