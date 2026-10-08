@@ -46,6 +46,9 @@ concurrency:
 
 jobs:
   atmos:
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest # ships the aws CLI used by EKS kubeconfig exec auth
     environment: ${{ inputs.environment }}
     env:
