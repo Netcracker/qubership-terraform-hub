@@ -24,7 +24,7 @@ on:
       action:
         description: "plan = preview only; deploy = create/update/scale; destroy = delete apps, volumes and cluster"
         type: choice
-        options: [plan, deploy, destroy]
+        options: [plan] # , deploy, destroy]
         default: plan
       node_count:
         description: "Scale: node count (GCP: per zone). Empty = stack default"
