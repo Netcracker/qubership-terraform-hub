@@ -65,10 +65,11 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # aws-access-key-id: ${{ secrets.AWS_S3_ }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           # Cost Explorer API is only available in us-east-1; S3 client uses this region too
           # unless the bucket is in another region (set AWS_REGION secret if needed)
+          role-to-assume: ${{ vars.AWS_COST_REPORT_OIDC }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Generate report and upload to S3
