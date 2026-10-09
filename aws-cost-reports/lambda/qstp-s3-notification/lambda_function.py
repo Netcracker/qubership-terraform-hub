@@ -22,7 +22,7 @@ S3 triggers:
     - qstp-consul
 
 Environment variables (set in Lambda, not in git):
-    GITHUB_TOKEN       — GitHub PAT for repository_dispatch API
+    GITHUB_TOKEN       — GitHub PAT for repository_dispatch API stored in Secrats Manager's secret repository_dispatch_event_token
     GITHUB_REPO_OWNER  — e.g. Netcracker
     GITHUB_REPO_NAME   — e.g. qubership-terraform-hub
 
@@ -38,7 +38,13 @@ import re
 from datetime import datetime
 import urllib.request
 import urllib.error
+import boto3
+from functools import lru_cache
 
+@lru_cache(maxsize=1)
+def get_github_token():
+    secret = boto3.client('secretsmanager').get_secret_value(SecretId='repository_dispatch_event_token')
+    return json.loads(secret['SecretString'])['GITHUB_REPOSITORY_DISPATCH_TOKEN']
 
 def lambda_handler(event, context):
     """
@@ -55,15 +61,18 @@ def lambda_handler(event, context):
     print(f"=== S3 Lambda Trigger Started ===")
 
     try:
-        GITHUB_TOKEN = os.environ['GITHUB_TOKEN']
+        # Get environment variables
+        GITHUB_TOKEN = get_github_token()
         GITHUB_REPO_OWNER = os.environ['GITHUB_REPO_OWNER']
         GITHUB_REPO_NAME = os.environ['GITHUB_REPO_NAME']
 
         print(f"Repo: {GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}")
 
+        # Track processed directories to avoid duplicates
         processed_directories = set()
         results = []
 
+        # Process all S3 events
         for record in event.get('Records', []):
             try:
                 bucket = record['s3']['bucket']['name']
@@ -71,18 +80,26 @@ def lambda_handler(event, context):
 
                 print(f"📁 Processing: s3://{bucket}/{key}")
 
+                # Skip if it's a report directory (to avoid infinite loops)
                 if key.startswith('Report/'):
                     print(f"   ⏭️  Skipping - is a report directory")
                     continue
 
+                # Extract directory from key
+                # If it's a file like: Result/[anything]/YYYY-MM-DD/HH-MM-SS/file.xml
+                # We want the directory: Result/[anything]/YYYY-MM-DD/HH-MM-SS/
                 if not key.endswith('/'):
+                    # It's a file, extract the directory
                     directory_key = '/'.join(key.split('/')[:-1]) + '/'
                 else:
                     directory_key = key
 
+                # Match pattern: Result/*/YYYY-MM-DD/HH-MM-SS/
+                # This will match any folder structure under Result/ that has date/time format
                 pattern = r'^Result/[^/]+/\d{4}-\d{2}-\d{2}/\d{2}-\d{2}-\d{2}/$'
 
                 if re.match(pattern, directory_key):
+                    # Avoid processing same directory multiple times
                     if directory_key in processed_directories:
                         print(f"   ⏭️  Skipping - already processed")
                         continue
@@ -90,6 +107,7 @@ def lambda_handler(event, context):
                     processed_directories.add(directory_key)
                     print(f"   ✅ Matched directory: {directory_key}")
 
+                    # Trigger GitHub Action
                     success, message = trigger_github_action(
                         directory_key,
                         bucket,
@@ -114,6 +132,7 @@ def lambda_handler(event, context):
         print(f"=== Processing Complete ===")
         print(f"Processed {len(results)} directories")
 
+        # Return summary
         successful = sum(1 for r in results if r['success'])
         return {
             'statusCode': 200 if successful > 0 else 400,
@@ -139,23 +158,27 @@ def lambda_handler(event, context):
             'body': json.dumps({'error': str(e)})
         }
 
-
 def trigger_github_action(directory_key, bucket, token, owner, repo):
     """
-    Call GitHub repository_dispatch API to start process-s3-report workflow.
-
-    Dispatches event_type 's3-new-result-directory' with directory metadata
-    in client_payload.
+    Trigger GitHub Action via repository_dispatch API
     """
     try:
+        # Clean directory path
         directory_path = directory_key.rstrip('/')
+
+        # Extract timestamp path and test type
+        # directory_path format: Result/[test-type]/YYYY-MM-DD/HH-MM-SS
         path_parts = directory_path.split('/')
 
+        # Extract test type (the part after Result/)
         test_type = path_parts[1] if len(path_parts) > 1 else 'unknown'
+
+        # Extract timestamp path (everything after Result/[test-type]/)
         timestamp_path = '/'.join(path_parts[2:]) if len(path_parts) > 2 else ''
         date_part = path_parts[2] if len(path_parts) > 2 else ''
         time_part = path_parts[3] if len(path_parts) > 3 else ''
 
+        # Prepare GitHub API request
         url = f"https://api.github.com/repos/{owner}/{repo}/dispatches"
 
         headers = {
@@ -181,6 +204,7 @@ def trigger_github_action(directory_key, bucket, token, owner, repo):
 
         print(f"   📤 Calling GitHub API for test type: {test_type}...")
 
+        # Make HTTP request
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode('utf-8'),
@@ -189,8 +213,9 @@ def trigger_github_action(directory_key, bucket, token, owner, repo):
         )
 
         with urllib.request.urlopen(req, timeout=15) as response:
+            response_body = response.read().decode('utf-8')
             status = response.status
-
+            
             if status == 204:
                 print(f"   ✅ GitHub Action triggered (204)")
                 return True, "GitHub Action triggered successfully"
