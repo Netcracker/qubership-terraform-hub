@@ -1,0 +1,84 @@
+# api-hub-demo was created by hand on 2025-06-04 (console, EKS Auto Mode) and adopted into the state later.
+# Everything below is what the cluster really has, so that `plan` replaces and deletes nothing.
+
+# Value the cost report (aws-cost-reports) already groups by
+tags:
+  cost-usage: api-hub
+
+# Lives in the shared "Qubership" VPC (component vpc-qubership, private subnets) and creates no network of its own
+vpc:
+  id: vpc-03fee08f5aa5940a3
+  subnet_ids: [subnet-05d43663ae71a00a4, subnet-0503e2de6f2c38cd8, subnet-01e223c693b528de8]
+
+# Created by this IAM user; pinned so that the access entry is not replaced by whoever runs Terraform
+cluster_admin_arn: arn:aws:iam::442426885383:user/roman_barmin
+
+eks:
+  # Console-made cluster role with a fixed name
+  iam_role_name: api-hub-demo-cluster
+  iam_role_use_name_prefix: false
+  iam_role_description: Allows access to other AWS service resources that are required to operate Auto Mode clusters managed by EKS.
+  # No secrets encryption (turning it on cannot be undone), no control plane logs
+  create_kms_key: false
+  encryption_config: null
+  enabled_log_types: []
+  # Only the security group EKS itself made; the nodes also sit in the node SG of Qubership-pioneer (see node_groups)
+  create_security_group: false
+  create_node_security_group: false
+  # Auto Mode is on, without node pools and without the IAM extras the module would add for it
+  compute_config:
+    enabled: true
+  create_node_iam_role: false
+  enable_auto_mode_custom_tags: false
+
+addons:
+  aws-efs-csi-driver:
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonEBSCSIDriverRole
+        service_account: efs-csi-controller-sa
+  vpc-cni:
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonVPCCNIRole
+        service_account: aws-node
+  # Uses Pod Identity, not the IRSA role the component creates
+  aws-ebs-csi-driver:
+    service_account_role_arn: null
+    pod_identity_association:
+      - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonEBSCSIDriverRole
+        service_account: ebs-csi-controller-sa
+
+node_groups:
+  # Made by Terraform (eks-managed-node-group module); owns the node role both groups run on
+  spot:
+    name: spot_group_api_hub
+    launch_template_name: spot_group_api_hub-eks-node-group
+    instance_types: [m6i.xlarge, m6i.large]
+    enable_monitoring: true
+    # Hop limit 2 lets pods reach IMDS
+    metadata_options:
+      http_put_response_hop_limit: 2
+    attach_cluster_primary_security_group: true
+    vpc_security_group_ids: [sg-017a91d036c01780d] # node SG of Qubership-pioneer
+    iam_role_additional_policies:
+      AmazonEC2FullAccess: arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      AmazonEKSBlockStoragePolicy: arn:aws:iam::aws:policy/AmazonEKSBlockStoragePolicy
+      EBSAndEFSCSIPolicy: arn:aws:iam::442426885383:policy/EBS-and-EFS-CSI-Policy
+    # Kept at zero; ec2-start only starts the on-demand group (the API does not accept max_size 0)
+    min_size: 0
+    max_size: 1
+    desired_size: 0
+
+  # Made in the console: exact name, no launch template, shares the node role of the spot group.
+  # Sized by NODE_COUNT like any other cluster.
+  ondemand:
+    name: ondemand-temp-stable
+    use_name_prefix: false
+    capacity_type: ON_DEMAND
+    instance_types: [m6i.xlarge]
+    disk_size: 20
+    create_launch_template: false
+    use_custom_launch_template: false
+    create_iam_role: false
+    iam_role_arn: arn:aws:iam::442426885383:role/spot_group_api_hub-eks-node-group-20250604014124754700000001
+    update_config:
+      max_unavailable: 1

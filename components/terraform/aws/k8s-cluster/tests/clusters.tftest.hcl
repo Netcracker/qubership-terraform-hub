@@ -27,8 +27,17 @@ run "adopted_cluster" {
   command = plan
   variables { cluster_name = "Qubership-pioneer" }
   assert {
-    condition     = module.vpc.name == "Qubership"
-    error_message = "cluster file is not applied"
+    condition     = output.vpc_id == "vpc-03fee08f5aa5940a3" && length(module.vpc.private_subnets) == 0
+    error_message = "cluster file is not applied: the cluster must use the shared VPC and create no network"
+  }
+}
+
+run "adopted_cluster_in_shared_vpc" {
+  command = plan
+  variables { cluster_name = "api-hub-demo" }
+  assert {
+    condition     = length(module.vpc.private_subnets) == 0
+    error_message = "a cluster with vpc.id in its file must not create a network"
   }
 }
 

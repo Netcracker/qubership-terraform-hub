@@ -24,3 +24,28 @@ components:
         kubernetes_version: "1.36"
         instance_type: !env INSTANCE_TYPE m6i.large
         node_count: !env NODE_COUNT 3
+
+    # VPC shared by Qubership-pioneer and api-hub-demo (their cluster files point at it by ID).
+    # Usage: atmos terraform plan vpc-qubership -s aws-dev
+    vpc-qubership:
+      metadata:
+        component: aws/vpc
+        terraform_workspace: vpc-qubership
+      backend:
+        s3:
+          key: vpc.tfstate
+      vars:
+        region: us-east-1
+        name: Qubership
+        # Created by other Terraform code: its default SG / route table / NACL were never managed
+        manage_defaults: false
+        tags:
+          project: Qubership
+          Environment: dev
+          requestor: Red-Team
+          created-by: Terraform-CI
+          cost-usage: common
+          kubernetes.io/cluster/Qubership-pioneer: shared
+        # Load balancer subnet discovery of the second cluster
+        subnet_tags:
+          kubernetes.io/cluster/api-hub-demo: shared

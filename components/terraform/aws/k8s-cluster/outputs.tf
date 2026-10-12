@@ -1,16 +1,16 @@
 output "vpc_id" {
   description = "The ID of the VPC."
-  value       = module.vpc.vpc_id
+  value       = try(local.cluster.vpc.id, module.vpc.vpc_id)
 }
 
 output "public_subnets" {
-  description = "The public subnets."
+  description = "The public subnets (empty for a cluster in a VPC it does not own)."
   value       = module.vpc.public_subnets
 }
 
 output "private_subnets" {
   description = "The private subnets."
-  value       = module.vpc.private_subnets
+  value       = try(local.cluster.vpc.subnet_ids, module.vpc.private_subnets)
 }
 
 output "kubernetes_api_server" {

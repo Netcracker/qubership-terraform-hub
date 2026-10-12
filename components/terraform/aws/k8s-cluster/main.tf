@@ -51,6 +51,9 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
+  # A cluster living in a VPC it does not own (cluster file: vpc.id + vpc.subnet_ids) creates no network at all
+  create_vpc = !can(local.cluster.vpc.id)
+
   name = try(local.cluster.vpc.name, local.projectname)
   cidr = local.vpc_cidr
 
@@ -115,11 +118,25 @@ module "eks" {
 
     iam_role_additional_policies = try(local.cluster.cluster_role_policies, {})
 
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+    # What an adopted cluster may lack or have differently from the ones created here (cluster file: eks.*)
+    iam_role_name                = try(local.cluster.eks.iam_role_name, null)
+    iam_role_use_name_prefix     = try(local.cluster.eks.iam_role_use_name_prefix, true)
+    iam_role_description         = try(local.cluster.eks.iam_role_description, null)
+    create_kms_key               = try(local.cluster.eks.create_kms_key, true)
+    encryption_config            = try(local.cluster.eks.encryption_config, {})
+    create_security_group        = try(local.cluster.eks.create_security_group, true)
+    create_node_security_group   = try(local.cluster.eks.create_node_security_group, true)
+    enabled_log_types            = try(local.cluster.eks.enabled_log_types, ["audit", "api", "authenticator"])
+    compute_config               = try(local.cluster.eks.compute_config, null)
+    create_node_iam_role         = try(local.cluster.eks.create_node_iam_role, true)
+    enable_auto_mode_custom_tags = try(local.cluster.eks.enable_auto_mode_custom_tags, true)
 
+  vpc_id     = try(local.cluster.vpc.id, module.vpc.vpc_id)
+  subnet_ids = try(local.cluster.vpc.subnet_ids, module.vpc.private_subnets)
+
+  # One node group ("name") unless the cluster file lists its own; every group starts from the same defaults
   eks_managed_node_groups = {
-      name = merge({
+    for k, v in try(local.cluster.node_groups, { name = {} }) : k => merge({
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
       name           = local.projectname
       kubernetes_version = var.kubernetes_version
@@ -130,7 +147,7 @@ module "eks" {
       min_size     = var.node_count
       max_size     = var.node_count + 1
       desired_size = var.node_count
-    }, try(local.cluster.node_group, {}))
+    }, v)
   }
   tags = local.tags
 }

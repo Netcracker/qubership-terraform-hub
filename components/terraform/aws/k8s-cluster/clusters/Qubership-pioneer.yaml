@@ -6,18 +6,10 @@
 tags:
   cost-usage: pioneer
 
+# Lives in the shared "Qubership" VPC (component vpc-qubership, private subnets) and creates no network of its own
 vpc:
-  # The VPC is shared with the api-hub-demo cluster and is not named after this one
-  name: Qubership
-  # Its default SG / route table / NACL were never managed; adopting them would wipe their rules and routes
-  manage_defaults: false
-  tags:
-    project: Qubership
-    cost-usage: common
-    kubernetes.io/cluster/Qubership-pioneer: shared
-  # Public and private subnets: load balancer subnet discovery of the second cluster
-  subnet_tags:
-    kubernetes.io/cluster/api-hub-demo: shared
+  id: vpc-03fee08f5aa5940a3
+  subnet_ids: [subnet-01e223c693b528de8, subnet-0503e2de6f2c38cd8, subnet-05d43663ae71a00a4]
 
 # Created by this IAM user; pinned so that the access entry is not replaced by whoever runs Terraform
 cluster_admin_arn: arn:aws:iam::442426885383:user/terraform-tech-user
@@ -44,22 +36,24 @@ addons:
       - role_arn: arn:aws:iam::442426885383:role/AmazonEKSPodIdentityAmazonEBSCSIDriverRole
         service_account: ebs-csi-controller-sa
 
-node_group:
-  # Name prefixes of the existing node group, node role and launch template (changing any of them forces replacement)
-  name: spot_group
-  iam_role_name: Qubership-pioneer-node-role
-  launch_template_name: spot_group
-  # Forces replacement too; takes precedence over the INSTANCE_TYPE input
-  instance_types: [m6i.xlarge, m6i.large]
-  key_name: ec2_eks_id_rsa
-  enable_monitoring: true
-  # Hop limit 2 lets pods reach IMDS: the LB controller and cluster-autoscaler run on the node role's policies below
-  metadata_options:
-    http_put_response_hop_limit: 2
-  iam_role_additional_policies:
-    AmazonEKSLoadBalancingPolicy: arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy
-    EBSAndEFSCSIPolicy: arn:aws:iam::442426885383:policy/EBS-and-EFS-CSI-Policy
-    AWSLoadBalancerControllerIAMPolicy: arn:aws:iam::442426885383:policy/AWSLoadBalancerControllerIAMPolicy
-    AWLLBControllerPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Policy
-    ClusterAutoscalerPolicy: arn:aws:iam::442426885383:policy/Cluster-Autoscaler-Policy
-    AWLLBControllerTagPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Tag-Policy
+node_groups:
+  # "name" is the key the group has in the state
+  name:
+    # Name prefixes of the existing node group, node role and launch template (changing any of them forces replacement)
+    name: spot_group
+    iam_role_name: Qubership-pioneer-node-role
+    launch_template_name: spot_group
+    # Forces replacement too; takes precedence over the INSTANCE_TYPE input
+    instance_types: [m6i.xlarge, m6i.large]
+    key_name: ec2_eks_id_rsa
+    enable_monitoring: true
+    # Hop limit 2 lets pods reach IMDS: the LB controller and cluster-autoscaler run on the node role's policies below
+    metadata_options:
+      http_put_response_hop_limit: 2
+    iam_role_additional_policies:
+      AmazonEKSLoadBalancingPolicy: arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy
+      EBSAndEFSCSIPolicy: arn:aws:iam::442426885383:policy/EBS-and-EFS-CSI-Policy
+      AWSLoadBalancerControllerIAMPolicy: arn:aws:iam::442426885383:policy/AWSLoadBalancerControllerIAMPolicy
+      AWLLBControllerPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Policy
+      ClusterAutoscalerPolicy: arn:aws:iam::442426885383:policy/Cluster-Autoscaler-Policy
+      AWLLBControllerTagPolicy: arn:aws:iam::442426885383:policy/AWL-LB-Controller-Tag-Policy
