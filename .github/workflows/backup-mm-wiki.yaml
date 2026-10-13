@@ -68,7 +68,7 @@ jobs:
 
     # ponytail: the archive is downloaded to the runner disk first (~14 GB free
     # is all GitHub guarantees); if the Mattermost data files outgrow it, move
-    # to a larger runner or go back to streaming. Retention is a bucket lifecycle rule
+    # to a larger runner or go back to streaming. Retention: backup-mm-wiki-cleanup.yaml
     - name: Create backup on VM and download it
       run: |
         file="$RUNNER_TEMP/backup-$NAME-$(date -u +%Y%m%d-%H%M%S).tar.gz"

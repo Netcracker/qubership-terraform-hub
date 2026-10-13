@@ -1,0 +1,58 @@
+name: Clean up MM and Wiki backups
+
+on:
+  schedule:
+    - cron: '0 4 * * 6' # the day after the weekly backup
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list what would be deleted
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write # AWS OIDC
+
+env:
+  S3_BUCKET: ${{ vars.AWS_BACKUP_S3_BUCKET }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ vars.AWS_BACKUP_OIDC }}
+  KEEP_DAYS: 21
+  KEEP_LAST: 2
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash # explicit shell adds -o pipefail
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: ${{ env.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # an object is deleted only if it is both older than KEEP_DAYS and not
+    # among the KEEP_LAST newest of its kind
+    - name: Delete old backups
+      run: |
+        cutoff=$(date -u -d "$KEEP_DAYS days ago" +%Y-%m-%dT%H:%M:%S)
+        [ "$DRY_RUN" = true ] && verb="Would delete" || verb="Deleted"
+        for name in mattermost wiki; do
+          aws s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix "$name/backup-$name-" \
+            --query 'Contents[].[LastModified,Size,Key]' --output text |
+            { grep -v '^None$' || true; } | sort > all.txt
+          head -n -"$KEEP_LAST" all.txt | awk -v c="$cutoff" '$1 < c' > old.txt
+          {
+            echo "### $name: $(wc -l < all.txt) backups, $verb $(wc -l < old.txt)"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          while read -r modified size key; do
+            [ "$DRY_RUN" = true ] || aws s3 rm "s3://$S3_BUCKET/$key"
+            echo "- $verb \`$key\` ($(numfmt --to=iec-i --suffix=B "$size"), $modified)" |
+              tee -a "$GITHUB_STEP_SUMMARY"
+          done < old.txt
+        done
+      env:
+        DRY_RUN: ${{ inputs.dry_run }}
