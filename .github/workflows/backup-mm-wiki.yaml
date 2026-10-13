@@ -1,0 +1,78 @@
+name: Backup MM and Wiki VMs
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      mattermost_files:
+        description: Include Mattermost data files
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # AWS OIDC
+
+env:
+  S3_BUCKET: ${{ vars.AWS_BACKUP_S3_BUCKET }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ vars.AWS_BACKUP_OIDC }}
+  # runs on the VM before matrix.script.
+  PRELUDE: |
+    set -euo pipefail
+    tmp=~/backup; mkdir -p -m 700 "$tmp"; trap 'rm -f "$tmp"/*.dump' EXIT
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mattermost
+            host: mattermost.qubership.org
+            script: |
+              sudo -u postgres pg_dump -Fc mattermost > "$tmp/mattermost.dump"
+              sudo tar -czf - -C "$tmp" mattermost.dump -C /opt/mattermost config
+            script_files: |
+              sudo -u postgres pg_dump -Fc mattermost > "$tmp/mattermost.dump"
+              sudo tar -czf - -C "$tmp" mattermost.dump -C /opt/mattermost config -C /var/opt/mattermost data
+          - name: wiki
+            host: wiki.qubership.org
+            script: |
+              sudo docker compose -f /opt/wiki/compose.yaml exec -T db pg_dump -U wikijs -Fc wiki > "$tmp/wiki.dump"
+              sudo tar -czf - --exclude=nginx/config/log -C "$tmp" wiki.dump -C /opt/wiki compose.yaml nginx
+
+    steps:
+    - name: Set up SSH
+      run: |
+        install -d -m 700 ~/.ssh
+        printf '%s\n' "$SSH_KEY" > ~/.ssh/id_backup
+        chmod 600 ~/.ssh/id_backup
+        printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      env:
+        SSH_KEY: ${{ secrets.BACKUP_SSH_KEY }}
+        KNOWN_HOSTS: ${{ vars.BACKUP_KNOWN_HOSTS }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v5
+      with:
+        role-to-assume: ${{ env.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+        role-duration-seconds: 21600 # the data files upload can outlast the default hour
+
+    # ponytail: dump lands in ~/backup on the VM, then the archive is piped from
+    # ssh straight to S3 (runner disk is too small for the data files); add
+    # --expected-size once an archive passes 50 GB. Retention is a bucket
+    # lifecycle rule, see docs/backup-setup.md
+    - name: Create backup
+      run: |
+        dest="s3://$S3_BUCKET/$NAME/backup-$NAME-$(date -u +%Y%m%d-%H%M%S).tar.gz"
+        # a failed dump still ends the stream cleanly for aws, so drop the truncated object
+        ssh -i ~/.ssh/id_backup "$SSH_USER@$HOST" 'bash -s' <<<"$PRELUDE$SCRIPT" |
+          aws s3 cp - "$dest" || { aws s3 rm "$dest"; exit 1; }
+      env:
+        NAME: ${{ matrix.name }}
+        HOST: ${{ matrix.host }}
+        SCRIPT: ${{ inputs.mattermost_files && matrix.script_files || matrix.script }}
+        SSH_USER: ${{ secrets.BACKUP_SSH_USER }}
