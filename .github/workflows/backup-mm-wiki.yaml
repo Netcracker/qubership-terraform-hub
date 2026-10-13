@@ -25,6 +25,9 @@ env:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash # explicit shell adds -o pipefail
     strategy:
       fail-fast: false
       matrix:
@@ -39,8 +42,10 @@ jobs:
               sudo tar -czf - -C "$tmp" mattermost.dump -C /opt/mattermost config -C /var/opt/mattermost data
           - name: wiki
             host: wiki.qubership.org
+            # < /dev/null: the script reaches the VM on stdin (bash -s), and docker
+            # exec would otherwise swallow the rest of it, so tar never ran
             script: |
-              sudo docker compose -f /opt/wiki/compose.yaml exec -T db pg_dump -U wikijs -Fc wiki > "$tmp/wiki.dump"
+              sudo docker compose -f /opt/wiki/compose.yaml exec -T db pg_dump -U wikijs -Fc wiki < /dev/null > "$tmp/wiki.dump"
               sudo tar -czf - --exclude=nginx/config/log -C "$tmp" wiki.dump -C /opt/wiki compose.yaml nginx
 
     steps:
@@ -61,18 +66,60 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
         role-duration-seconds: 21600 # the data files upload can outlast the default hour
 
-    # ponytail: dump lands in ~/backup on the VM, then the archive is piped from
-    # ssh straight to S3 (runner disk is too small for the data files); add
-    # --expected-size once an archive passes 50 GB. Retention is a bucket
-    # lifecycle rule, see docs/backup-setup.md
-    - name: Create backup
+    # ponytail: the archive is downloaded to the runner disk first (~14 GB free
+    # is all GitHub guarantees); if the Mattermost data files outgrow it, move
+    # to a larger runner or go back to streaming. Retention is a bucket lifecycle rule
+    - name: Create backup on VM and download it
       run: |
-        dest="s3://$S3_BUCKET/$NAME/backup-$NAME-$(date -u +%Y%m%d-%H%M%S).tar.gz"
-        # a failed dump still ends the stream cleanly for aws, so drop the truncated object
-        ssh -i ~/.ssh/id_backup "$SSH_USER@$HOST" 'bash -s' <<<"$PRELUDE$SCRIPT" |
-          aws s3 cp - "$dest" || { aws s3 rm "$dest"; exit 1; }
+        file="$RUNNER_TEMP/backup-$NAME-$(date -u +%Y%m%d-%H%M%S).tar.gz"
+        echo "file=$file" >> "$GITHUB_ENV"
+        df -h "$RUNNER_TEMP"
+        ssh -i ~/.ssh/id_backup "$SSH_USER@$HOST" 'bash -s' <<<"$PRELUDE$SCRIPT" > "$file"
+        ls -l "$file"
       env:
         NAME: ${{ matrix.name }}
         HOST: ${{ matrix.host }}
         SCRIPT: ${{ inputs.mattermost_files && matrix.script_files || matrix.script }}
         SSH_USER: ${{ secrets.BACKUP_SSH_USER }}
+
+    - name: Verify archive
+      run: |
+        fail() { echo "::error::$1"; exit 1; }
+        list="$RUNNER_TEMP/contents.txt"
+        [ -s "$file" ] || fail "$(basename "$file") is empty"
+        # reads the whole archive: fails on a truncated or corrupt gzip stream
+        tar -tvzf "$file" > "$list" || fail "archive is truncated or corrupt"
+        head -n 50 "$list"
+        echo "total entries: $(wc -l < "$list")"
+        dump_size=$(awk -v f="$NAME.dump" '$NF == f { print $3; exit }' "$list")
+        [ "${dump_size:-0}" -gt 0 ] || fail "$NAME.dump is missing from the archive or empty"
+        # pg_dump -Fc output starts with the PGDMP magic
+        [ "$(tar -xzOf "$file" --occurrence=1 "$NAME.dump" | head -c 5)" = PGDMP ] ||
+          fail "$NAME.dump is not a PostgreSQL custom-format dump"
+        echo "dump_size=$dump_size" >> "$GITHUB_ENV"
+      env:
+        NAME: ${{ matrix.name }}
+
+    - name: Upload to S3
+      run: |
+        dest="s3://$S3_BUCKET/$NAME/$(basename "$file")"
+        # the CLI checksums the upload, S3 rejects a mismatch and cp exits non-zero
+        aws s3 cp --no-progress "$file" "$dest"
+        size=$(stat -c %s "$file")
+        s3_size=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$NAME/$(basename "$file")" \
+          --query ContentLength --output text)
+        [ "$s3_size" = "$size" ] ||
+          { echo "::error::size mismatch: $size bytes on the runner, $s3_size in S3"; exit 1; }
+        {
+          echo "### :white_check_mark: $NAME backup uploaded to S3"
+          echo
+          echo "| | |"
+          echo "|---|---|"
+          echo "| Object | \`$dest\` |"
+          echo "| Archive size | $(numfmt --to=iec-i --suffix=B "$size") (verified in S3) |"
+          echo "| \`$NAME.dump\` size | $(numfmt --to=iec-i --suffix=B "$dump_size") |"
+          echo "| Entries in archive | $(wc -l < "$RUNNER_TEMP/contents.txt") |"
+          echo "| SHA-256 | \`$(sha256sum "$file" | cut -d' ' -f1)\` |"
+        } >> "$GITHUB_STEP_SUMMARY"
+      env:
+        NAME: ${{ matrix.name }}
