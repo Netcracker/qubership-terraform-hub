@@ -22,7 +22,7 @@ S3 triggers:
     - qstp-consul
 
 Environment variables (set in Lambda, not in git):
-    GITHUB_TOKEN       — GitHub PAT for repository_dispatch API stored in Secrats Manager's secret repository_dispatch_event_token
+    GITHUB_TOKEN       — GitHub PAT for repository_dispatch API stored in Secrets Manager's secret repository_dispatch_event_token
     GITHUB_REPO_OWNER  — e.g. Netcracker
     GITHUB_REPO_NAME   — e.g. qubership-terraform-hub
 
