@@ -37,9 +37,10 @@ Configured in Lambda (never commit secrets to git):
 
 | Variable | Description |
 |----------|-------------|
-| `GITHUB_TOKEN` | GitHub PAT with `repo` scope for dispatch API |
 | `GITHUB_REPO_OWNER` | Repository owner (e.g. `Netcracker`) |
 | `GITHUB_REPO_NAME` | Repository name (e.g. `qubership-terraform-hub`) |
+
+The GitHub PAT (`repo` scope) is read from Secrets Manager secret `repository_dispatch_event_token`, key `GITHUB_REPOSITORY_DISPATCH_TOKEN`. The Lambda role needs `secretsmanager:GetSecretValue` on it.
 
 ## Deploy / update
 
