@@ -213,6 +213,7 @@ def trigger_github_action(directory_key, bucket, token, owner, repo):
         )
 
         with urllib.request.urlopen(req, timeout=15) as response:
+            response_body = response.read().decode('utf-8')
             status = response.status
             
             if status == 204:

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>Netcracker/renovate-config:base",
+    "github>Netcracker/renovate-config:github-actions"
+  ],
+  "packageRules": [
+    {
+      "description": ["Terraform CLI and terraform-aws-modules are upgraded by hand: a module major can rename resources and recreate them in live clusters"],
+      "matchPackageNames": ["hashicorp/terraform", "terraform-aws-modules/**"],
+      "enabled": false
+    }
+  ]
+}
