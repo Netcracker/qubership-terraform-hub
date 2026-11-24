@@ -133,7 +133,7 @@ jobs:
 
       - name: Send email
         if: ${{ github.event_name == 'schedule' || github.event.inputs.send_email == 'true' }}
-        uses: netcracker/qubership-workflow-hub/actions/email-action@cf536587a99a23b3614aa4db4bdbf13cf36059b6 # v2.8.3
+        uses: netcracker/qubership-workflow-hub/actions/email-action@cdfcd0a8abd7ba80d7a04a4e9debfb4e24995f1a # v3.0.1
         with:
           server-address: smtp.gmail.com
           server-port: 587
